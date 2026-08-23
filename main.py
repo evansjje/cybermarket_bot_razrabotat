@@ -1,15 +1,13 @@
 import asyncio
 import logging
-import os
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
 
-from config import settings
-from database import db
+from config import Settings
+from database import Database
 from handlers import catalog, payment, admin
-from keyboards import get_main_menu
 
 # Настройка логирования
 logging.basicConfig(
@@ -18,79 +16,58 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+settings = Settings()
 
-async def on_startup(bot: Bot) -> None:
+
+async def on_startup(bot: Bot, db: Database) -> None:
     """Действия при запуске бота."""
-    logger.info("🚀 Бот запускается...")
-    
-    # Подключаемся к базе данных
     await db.connect()
-    logger.info("✅ База данных подключена")
-    
-    # Создаем директорию для товаров, если её нет
-    os.makedirs(settings.PRODUCTS_DIR, exist_ok=True)
-    
-    # Устанавливаем команды бота
-    await bot.set_my_commands([
-        {"command": "start", "description": "🚀 Запустить бота"},
-        {"command": "catalog", "description": "🛍️ Открыть каталог"},
-        {"command": "cart", "description": "🛒 Открыть корзину"},
-        {"command": "admin", "description": "⚙️ Админ-панель"},
-        {"command": "help", "description": "❓ Помощь"}
-    ])
-    
-    logger.info("✅ Команды установлены")
-    logger.info("🎉 Бот готов к работе!")
+    await db.create_default_categories()
+    logger.info("Бот запущен и готов к работе")
 
 
-async def on_shutdown(bot: Bot) -> None:
+async def on_shutdown(bot: Bot, db: Database) -> None:
     """Действия при остановке бота."""
-    logger.info("🛑 Бот останавливается...")
     await db.close()
-    logger.info("✅ База данных закрыта")
+    logger.info("Бот остановлен")
 
 
 async def main() -> None:
-    """Точка входа в приложение."""
-    
-    # Проверяем наличие токена
-    if settings.bot_token == "YOUR_BOT_TOKEN_HERE":
-        logger.error("❌ Не установлен BOT_TOKEN! Укажите токен в .env файле")
-        return
-    
-    # Создаем экземпляр бота
+    """Главная функция запуска бота."""
+    # Инициализация бота
     bot = Bot(
         token=settings.bot_token,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML)
     )
     
-    # Создаем диспетчер с хранилищем состояний
+    # Инициализация хранилища состояний
     storage = MemoryStorage()
+    
+    # Инициализация диспетчера
     dp = Dispatcher(storage=storage)
     
-    # Регистрируем роутеры
+    # Создание экземпляра базы данных
+    db = Database(settings.DB_PATH)
+    
+    # Регистрация роутеров
     dp.include_router(catalog.router)
     dp.include_router(payment.router)
     dp.include_router(admin.router)
     
-    # Регистрируем обработчики запуска и остановки
-    dp.startup.register(on_startup)
-    dp.shutdown.register(on_shutdown)
+    # Регистрация хуков жизненного цикла
+    dp.startup.register(lambda: on_startup(bot, db))
+    dp.shutdown.register(lambda: on_shutdown(bot, db))
     
-    # Запускаем бота
-    logger.info("⚡ Запуск бота...")
+    # Запуск бота
     try:
-        await dp.start_polling(bot, skip_updates=True)
+        logger.info("Запуск бота...")
+        await dp.start_polling(bot)
+    except (KeyboardInterrupt, SystemExit):
+        logger.info("Бот остановлен пользователем")
     except Exception as e:
-        logger.error(f"❌ Ошибка при запуске бота: {e}")
-    finally:
-        await bot.session.close()
+        logger.error(f"Критическая ошибка: {e}")
+        raise
 
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        logger.info("👋 Бот остановлен пользователем")
-    except Exception as e:
-        logger.error(f"❌ Критическая ошибка: {e}")
+    asyncio.run(main())

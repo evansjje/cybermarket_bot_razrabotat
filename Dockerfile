@@ -9,23 +9,23 @@ RUN apt-get update && apt-get install -y \
     gcc \
     && rm -rf /var/lib/apt/lists/*
 
-# Копируем requirements.txt
+# Копируем файл с зависимостями
 COPY requirements.txt .
 
-# Устанавливаем Python-зависимости
+# Устанавливаем зависимости Python
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Копируем исходный код проекта
+# Копируем все файлы проекта
 COPY . .
 
-# Создаем директорию для товаров
-RUN mkdir -p products
+# Создаем директорию для медиафайлов
+RUN mkdir -p media
 
 # Указываем переменные окружения
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
-# Открываем порт (если нужно)
+# Открываем порт (если нужен, для вебхуков)
 EXPOSE 8080
 
 # Команда для запуска бота
