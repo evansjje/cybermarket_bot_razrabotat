@@ -18,5 +18,5 @@ VOLUME ["/app/data"]
 # Указываем переменную окружения для пути к БД
 ENV DB_PATH=/app/data/cybermarket.db
 
-# Команда для запуска бота
+# Запускаем бота
 CMD ["python", "main.py"]
