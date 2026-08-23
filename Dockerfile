@@ -1,31 +1,28 @@
 FROM python:3.11-slim
 
+# Устанавливаем рабочую директорию
 WORKDIR /app
 
-# Установка системных зависимостей
+# Устанавливаем системные зависимости
 RUN apt-get update && apt-get install -y \
     gcc \
     && rm -rf /var/lib/apt/lists/*
 
-# Копирование файлов проекта
+# Копируем файл с зависимостями
 COPY requirements.txt .
-COPY config.py .
-COPY database.py .
-COPY keyboards.py .
-COPY main.py .
-COPY handlers/ ./handlers/
 
-# Установка Python-зависимостей
+# Устанавливаем Python-зависимости
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Создание директории для базы данных
-RUN mkdir -p /app/data
+# Копируем все файлы проекта
+COPY . .
 
-# Переменные окружения (переопределяются при запуске)
-ENV BOT_TOKEN="YOUR_BOT_TOKEN_HERE"
-ENV YOOKASSA_SHOP_ID="YOUR_SHOP_ID"
-ENV YOOKASSA_SECRET_KEY="YOUR_SECRET_KEY"
-ENV ADMIN_IDS=""
+# Создаем том для базы данных
+VOLUME ["/app/data"]
 
-# Запуск бота
+# Переменные окружения
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+# Команда для запуска бота
 CMD ["python", "main.py"]

@@ -4,44 +4,49 @@ import logging
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
+
 from config import settings
 from database import Database
-from handlers import start, catalog, payment, admin
+from handlers import start, catalog, cart, admin, other
 
 # Настройка логирования
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
 async def main():
-    """Точка входа в приложение"""
-    # Инициализация бота и диспетчера
+    """Главная функция запуска бота"""
+    # Инициализация базы данных
+    db = Database()
+    await db.init_db()
+    logger.info("База данных инициализирована")
+
+    # Создание бота и диспетчера
     bot = Bot(
-        token=settings.BOT_TOKEN,
+        token=settings.BOT_TOKEN.get_secret_value(),
         default=DefaultBotProperties(parse_mode=ParseMode.HTML)
     )
     dp = Dispatcher()
 
-    # Инициализация базы данных
-    db = Database()
-    await db.init_db()
-
     # Подключение роутеров
     dp.include_router(start.router)
     dp.include_router(catalog.router)
-    dp.include_router(payment.router)
+    dp.include_router(cart.router)
     dp.include_router(admin.router)
+    dp.include_router(other.router)
+
+    logger.info("Бот запущен и готов к работе")
 
     # Запуск поллинга
-    logger.info("Бот запущен и готов к работе!")
     try:
         await dp.start_polling(bot)
     finally:
         await bot.session.close()
+        logger.info("Бот остановлен")
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except (KeyboardInterrupt, SystemExit):
+        logger.info("Бот остановлен вручную")

@@ -1,36 +1,17 @@
 # config.py
-import os
-from typing import Union, List
-from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import SecretStr
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file='.env', extra='ignore')
+    BOT_TOKEN: SecretStr
+    ADMIN_ID: int
 
-    BOT_TOKEN: str = "YOUR_BOT_TOKEN_HERE"
-    YOOKASSA_SHOP_ID: str = "YOUR_SHOP_ID"
-    YOOKASSA_SECRET_KEY: str = "YOUR_SECRET_KEY"
-    ADMIN_IDS: Union[List[int], str, int] = []
-
-    @field_validator('ADMIN_IDS', mode='before')
-    @classmethod
-    def parse_admin_ids(cls, v):
-        if isinstance(v, str):
-            if v.strip() == '':
-                return []
-            return [int(x.strip()) for x in v.split(',') if x.strip().isdigit()]
-        if isinstance(v, int):
-            return [v]
-        return v
-
-    @property
-    def admin_ids_list(self) -> List[int]:
-        if isinstance(self.ADMIN_IDS, list):
-            return self.ADMIN_IDS
-        if isinstance(self.ADMIN_IDS, int):
-            return [self.ADMIN_IDS]
-        return []
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
 
 settings = Settings()

@@ -1,13 +1,16 @@
 # handlers/catalog.py
-from aiogram import Router, F
+from aiogram import Router, types, F
 from aiogram.types import Message, CallbackQuery
+from aiogram.filters import Command
+
 from database import Database
 from keyboards import (
-    catalog_categories_kb,
+    categories_kb,
     products_kb,
-    product_detail_kb,
+    product_card_kb,
     main_menu_kb
 )
+from config import settings
 
 router = Router()
 db = Database()
@@ -15,70 +18,75 @@ db = Database()
 
 @router.message(F.text == "🛍 Каталог")
 async def show_catalog(message: Message):
-    """Показать категории товаров"""
+    """Показать список категорий"""
     categories = await db.get_categories()
+    
+    if not categories:
+        await message.answer(
+            "📭 Каталог пока пуст. Загляните позже!",
+            reply_markup=main_menu_kb(is_admin=message.from_user.id == settings.ADMIN_ID)
+        )
+        return
+    
     await message.answer(
         "🛍 Выберите категорию:",
-        reply_markup=catalog_categories_kb(categories)
+        reply_markup=categories_kb(categories)
     )
 
 
 @router.callback_query(F.data.startswith("cat_"))
-async def show_products(callback: CallbackQuery):
-    """Показать товары в выбранной категории"""
-    category = callback.data.replace("cat_", "")
-    products = await db.get_products_by_category(category)
+async def show_category_products(callback: CallbackQuery):
+    """Показать товары выбранной категории"""
+    category_id = int(callback.data.split("_")[1])
+    
+    products = await db.get_products(category_id)
+    category = await db.get_category(category_id)
     
     if not products:
-        await callback.message.answer(
+        await callback.message.edit_text(
+            f"📁 {category['name']}\n\n"
             "😔 В этой категории пока нет товаров.",
-            reply_markup=catalog_categories_kb(await db.get_categories())
+            reply_markup=categories_kb(await db.get_categories())
         )
         await callback.answer()
         return
     
-    await callback.message.answer(
-        f"📦 Товары в категории «{category}»:",
-        reply_markup=products_kb(products)
+    await callback.message.edit_text(
+        f"📁 {category['name']}\n\n"
+        f"Найдено товаров: {len(products)}\n"
+        "Выберите товар:",
+        reply_markup=products_kb(products, category_id)
     )
     await callback.answer()
 
 
-@router.callback_query(F.data.startswith("product_"))
-async def show_product_detail(callback: CallbackQuery):
-    """Показать детальную информацию о товаре"""
-    product_id = int(callback.data.replace("product_", ""))
+@router.callback_query(F.data.startswith("prod_"))
+async def show_product_card(callback: CallbackQuery):
+    """Показать карточку товара"""
+    product_id = int(callback.data.split("_")[1])
+    
     product = await db.get_product(product_id)
     
     if not product:
-        await callback.message.answer(
-            "❌ Товар не найден или был удален.",
-            reply_markup=main_menu_kb()
+        await callback.message.edit_text(
+            "❌ Товар не найден.",
+            reply_markup=categories_kb(await db.get_categories())
         )
         await callback.answer()
         return
     
-    product_id, name, description, price, category, file_path, download_link, is_available = product
-    
-    if not is_available:
-        await callback.message.answer(
-            f"❌ Товар «{name}» временно недоступен.",
-            reply_markup=main_menu_kb()
-        )
-        await callback.answer()
-        return
-    
-    text = (
-        f"📦 <b>{name}</b>\n\n"
-        f"📝 {description}\n\n"
-        f"💰 Цена: {price} ₽\n"
-        f"📂 Категория: {category}"
+    # Формируем карточку товара
+    card_text = (
+        f"🛍 {product['name']}\n\n"
+        f"📝 {product['description']}\n\n"
+        f"💰 Цена: {product['price']}₽\n"
+        f"📦 В наличии: {product['stock']} шт.\n\n"
+        f"Категория: {product['category_name']}"
     )
     
-    await callback.message.answer(
-        text,
-        reply_markup=product_detail_kb(product_id),
-        parse_mode="HTML"
+    await callback.message.edit_text(
+        card_text,
+        reply_markup=product_card_kb(product_id)
     )
     await callback.answer()
 
@@ -86,41 +94,53 @@ async def show_product_detail(callback: CallbackQuery):
 @router.callback_query(F.data.startswith("add_"))
 async def add_to_cart(callback: CallbackQuery):
     """Добавить товар в корзину"""
-    product_id = int(callback.data.replace("add_", ""))
+    product_id = int(callback.data.split("_")[1])
     user_id = callback.from_user.id
     
-    success = await db.add_to_cart(user_id, product_id)
+    # Проверяем наличие товара
+    product = await db.get_product(product_id)
+    
+    if not product:
+        await callback.answer("❌ Товар не найден!", show_alert=True)
+        return
+    
+    if product['stock'] <= 0:
+        await callback.answer("😔 Товар закончился!", show_alert=True)
+        return
+    
+    # Добавляем в корзину
+    success = await db.add_to_cart(
+        user_id=user_id,
+        product_id=product_id
+    )
     
     if success:
-        await callback.message.answer(
-            "✅ Товар добавлен в корзину!\n"
-            "Перейдите в раздел «🛒 Корзина» для оформления заказа.",
-            reply_markup=main_menu_kb()
+        await callback.answer(
+            f"✅ {product['name']} добавлен в корзину!",
+            show_alert=True
         )
     else:
-        await callback.message.answer(
-            "❌ Не удалось добавить товар в корзину. Попробуйте позже.",
-            reply_markup=main_menu_kb()
+        await callback.answer(
+            "❌ Ошибка при добавлении в корзину",
+            show_alert=True
         )
-    await callback.answer()
 
 
-@router.callback_query(F.data == "back_to_categories")
-async def back_to_categories(callback: CallbackQuery):
-    """Вернуться к списку категорий"""
-    categories = await db.get_categories()
+@router.callback_query(F.data == "main_menu")
+async def back_to_main_menu(callback: CallbackQuery):
+    """Вернуться в главное меню"""
+    user_id = callback.from_user.id
+    is_admin = user_id == settings.ADMIN_ID
+    
+    await callback.message.delete()
     await callback.message.answer(
-        "🛍 Выберите категорию:",
-        reply_markup=catalog_categories_kb(categories)
+        "🏠 Главное меню",
+        reply_markup=main_menu_kb(is_admin=is_admin)
     )
     await callback.answer()
 
 
-@router.callback_query(F.data == "back_to_products")
-async def back_to_products(callback: CallbackQuery):
-    """Вернуться к списку товаров (заглушка, будет обработано в других местах)"""
-    await callback.message.answer(
-        "⬅️ Выберите категорию:",
-        reply_markup=catalog_categories_kb(await db.get_categories())
-    )
-    await callback.answer()
+@router.message(Command("catalog"))
+async def cmd_catalog(message: Message):
+    """Команда /catalog"""
+    await show_catalog(message)
