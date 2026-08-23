@@ -1,169 +1,126 @@
-# handlers/catalog.py
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
-from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
+from aiogram.filters import Command
 
-from database import Database
-from keyboards import (
-    categories_kb,
-    products_kb,
-    product_card_kb,
-    main_menu_kb,
-    back_to_categories_kb
-)
-from config import settings
+from database import get_connection
+from keyboards import get_categories_keyboard, get_products_keyboard, get_product_card_keyboard
 
 router = Router()
-db = Database()
-
-
-class CatalogStates(StatesGroup):
-    """Состояния для каталога."""
-    viewing_category = State()
-    viewing_product = State()
 
 
 @router.message(F.text == "🛍 Каталог")
-async def show_categories(message: Message, state: FSMContext):
-    """Показать список категорий."""
-    categories = await db.get_categories()
-    
-    if not categories:
-        await message.answer(
-            "📭 Каталог пуст. Товары появятся позже!",
-            reply_markup=main_menu_kb(is_admin=message.from_user.id == settings.ADMIN_ID)
-        )
-        return
-    
-    await message.answer(
-        "🛍 Выберите категорию:",
-        reply_markup=categories_kb(categories)
-    )
-    await state.set_state(CatalogStates.viewing_category)
+async def show_categories(message: Message) -> None:
+    """Показать категории товаров"""
+    keyboard = await get_categories_keyboard()
+    await message.answer("🛍 Выберите категорию:", reply_markup=keyboard)
 
 
 @router.callback_query(F.data.startswith("cat_"))
-async def show_products(callback: CallbackQuery, state: FSMContext):
-    """Показать товары выбранной категории."""
+async def show_products(callback: CallbackQuery) -> None:
+    """Показать товары выбранной категории"""
     category_id = int(callback.data.split("_")[1])
-    products = await db.get_products(category_id)
     
-    if not products:
-        await callback.message.edit_text(
-            "📭 В этой категории пока нет товаров.",
-            reply_markup=back_to_categories_kb()
+    conn = await get_connection()
+    try:
+        cursor = await conn.execute("SELECT name FROM categories WHERE id = ?", (category_id,))
+        category = await cursor.fetchone()
+        
+        if not category:
+            await callback.answer("❌ Категория не найдена", show_alert=True)
+            return
+        
+        cursor = await conn.execute(
+            "SELECT id, title, desc, price FROM products WHERE category_id = ? ORDER BY id",
+            (category_id,)
         )
+        products = await cursor.fetchall()
+    finally:
+        await conn.close()
+
+    if not products:
+        await callback.answer("📭 В этой категории пока нет товаров", show_alert=True)
         return
-    
+
+    keyboard = await get_products_keyboard(category_id)
     await callback.message.edit_text(
-        "📦 Выберите товар:",
-        reply_markup=products_kb(products, category_id)
+        f"📂 Категория: {category['name']}\n\n"
+        f"Товаров в категории: {len(products)}\n"
+        f"Выберите товар:",
+        reply_markup=keyboard
     )
-    await state.update_data(category_id=category_id)
-    await state.set_state(CatalogStates.viewing_category)
+    await callback.answer()
 
 
 @router.callback_query(F.data.startswith("prod_"))
-async def show_product_card(callback: CallbackQuery, state: FSMContext):
-    """Показать карточку товара."""
+async def show_product_card(callback: CallbackQuery) -> None:
+    """Показать карточку товара"""
     product_id = int(callback.data.split("_")[1])
-    product = await db.get_product(product_id)
     
+    conn = await get_connection()
+    try:
+        cursor = await conn.execute(
+            """SELECT p.*, c.name as category_name 
+               FROM products p 
+               JOIN categories c ON p.category_id = c.id 
+               WHERE p.id = ?""",
+            (product_id,)
+        )
+        product = await cursor.fetchone()
+    finally:
+        await conn.close()
+
     if not product:
         await callback.answer("❌ Товар не найден", show_alert=True)
         return
-    
-    # Формируем текст карточки товара
-    card_text = (
-        f"📦 <b>{product['name']}</b>\n\n"
-        f"📝 {product['description']}\n\n"
-        f"💰 Цена: <b>{product['price']}₽</b>\n"
-        f"📊 В наличии: {product['stock']} шт.\n\n"
-        f"Категория: {product['category_name']}"
-    )
-    
+
+    keyboard = await get_product_card_keyboard(product_id)
     await callback.message.edit_text(
-        card_text,
-        reply_markup=product_card_kb(product_id),
-        parse_mode="HTML"
+        f"📦 {product['title']}\n\n"
+        f"📂 Категория: {product['category_name']}\n"
+        f"💰 Цена: {product['price']}₽\n\n"
+        f"📝 Описание:\n{product['desc']}",
+        reply_markup=keyboard
     )
-    await state.update_data(product_id=product_id)
-    await state.set_state(CatalogStates.viewing_product)
+    await callback.answer()
 
 
-@router.callback_query(F.data == "add_to_cart")
-async def add_to_cart(callback: CallbackQuery, state: FSMContext):
-    """Добавить товар в корзину."""
-    data = await state.get_data()
-    product_id = data.get("product_id")
-    
-    if not product_id:
-        await callback.answer("❌ Ошибка: товар не выбран", show_alert=True)
-        return
-    
+@router.callback_query(F.data.startswith("add_"))
+async def add_to_cart(callback: CallbackQuery) -> None:
+    """Добавить товар в корзину"""
+    product_id = int(callback.data.split("_")[1])
     user_id = callback.from_user.id
-    
-    # Проверяем наличие товара
-    product = await db.get_product(product_id)
-    if not product or product["stock"] <= 0:
-        await callback.answer("❌ Товар закончился", show_alert=True)
-        return
-    
-    # Добавляем в корзину
-    success = await db.add_to_cart(user_id, product_id)
-    
-    if success:
+
+    conn = await get_connection()
+    try:
+        # Проверяем существование товара
+        cursor = await conn.execute("SELECT id FROM products WHERE id = ?", (product_id,))
+        product = await cursor.fetchone()
+        
+        if not product:
+            await callback.answer("❌ Товар не найден", show_alert=True)
+            return
+
+        # Добавляем в корзину
+        await conn.execute(
+            """INSERT INTO cart (user_id, product_id, count) 
+               VALUES (?, ?, 1)
+               ON CONFLICT(user_id, product_id) 
+               DO UPDATE SET count = count + 1""",
+            (user_id, product_id)
+        )
+        await conn.commit()
+        
         await callback.answer("✅ Товар добавлен в корзину!", show_alert=True)
-    else:
-        await callback.answer("❌ Ошибка при добавлении в корзину", show_alert=True)
+    finally:
+        await conn.close()
 
 
 @router.callback_query(F.data == "back_to_categories")
-async def back_to_categories(callback: CallbackQuery, state: FSMContext):
-    """Вернуться к списку категорий."""
-    categories = await db.get_categories()
-    
-    if categories:
-        await callback.message.edit_text(
-            "🛍 Выберите категорию:",
-            reply_markup=categories_kb(categories)
-        )
-    else:
-        await callback.message.edit_text(
-            "📭 Каталог пуст.",
-            reply_markup=main_menu_kb(is_admin=callback.from_user.id == settings.ADMIN_ID)
-        )
-    
-    await state.set_state(CatalogStates.viewing_category)
-
-
-@router.callback_query(F.data == "back_to_menu")
-async def back_to_menu(callback: CallbackQuery, state: FSMContext):
-    """Вернуться в главное меню."""
-    await state.clear()
-    is_admin = callback.from_user.id == settings.ADMIN_ID
+async def back_to_categories(callback: CallbackQuery) -> None:
+    """Вернуться к списку категорий"""
+    keyboard = await get_categories_keyboard()
     await callback.message.edit_text(
-        "🏠 Главное меню:",
-        reply_markup=main_menu_kb(is_admin=is_admin)
+        "🛍 Выберите категорию:",
+        reply_markup=keyboard
     )
-
-
-@router.callback_query(F.data.startswith("page_"))
-async def paginate_products(callback: CallbackQuery, state: FSMContext):
-    """Пагинация товаров в категории."""
-    data = await state.get_data()
-    category_id = data.get("category_id")
-    
-    if not category_id:
-        await callback.answer("❌ Ошибка", show_alert=True)
-        return
-    
-    page = int(callback.data.split("_")[1])
-    products = await db.get_products(category_id)
-    
-    if products:
-        await callback.message.edit_text(
-            "📦 Выберите товар:",
-            reply_markup=products_kb(products, category_id, page=page)
-        )
+    await callback.answer()

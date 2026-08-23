@@ -1,171 +1,223 @@
-# handlers/other.py
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
-from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-from database import Database
-from keyboards import main_menu_kb, back_to_menu_kb
-from config import settings
+from database import get_connection
+from keyboards import get_main_menu
 
 router = Router()
-db = Database()
-
-
-class SupportStates(StatesGroup):
-    """Состояния для поддержки."""
-    waiting_message = State()
-
-
-@router.message(F.text == "⭐ Отзывы")
-async def reviews_handler(message: Message):
-    """Показать отзывы о магазине."""
-    await message.answer(
-        "⭐ <b>Отзывы наших клиентов:</b>\n\n"
-        "🌟 «Отличный магазин! Всё работает, товар пришёл мгновенно» — Алексей\n"
-        "🌟 «Быстрая поддержка, качественные товары. Рекомендую!» — Мария\n"
-        "🌟 «Покупаю здесь постоянно, всё на высшем уровне» — Дмитрий\n\n"
-        "Хотите оставить отзыв? Напишите его в чат, и мы обязательно его опубликуем!",
-        parse_mode="HTML"
-    )
-
-
-@router.message(F.text == "🆘 Поддержка")
-async def support_handler(message: Message, state: FSMContext):
-    """Начать диалог с поддержкой."""
-    await message.answer(
-        "🆘 <b>Служба поддержки</b>\n\n"
-        "Опишите вашу проблему или вопрос, и мы ответим вам в ближайшее время.\n\n"
-        "Напишите ваше сообщение:",
-        parse_mode="HTML"
-    )
-    await state.set_state(SupportStates.waiting_message)
-
-
-@router.message(SupportStates.waiting_message)
-async def support_message_handler(message: Message, state: FSMContext):
-    """Обработка сообщения в поддержку."""
-    user_id = message.from_user.id
-    username = message.from_user.username or "нет username"
-    text = message.text
-
-    # Здесь можно добавить отправку сообщения админу
-    # Например, через бота или email
-    
-    await message.answer(
-        "✅ Ваше сообщение отправлено в поддержку!\n\n"
-        "Мы ответим вам в ближайшее время. Спасибо за обращение!",
-        reply_markup=main_menu_kb(is_admin=user_id == settings.ADMIN_ID)
-    )
-    await state.clear()
 
 
 @router.message(F.text == "👥 Рефералка")
-async def referral_handler(message: Message):
-    """Показать реферальную программу."""
+async def referral_info(message: Message) -> None:
+    """Показать реферальную ссылку и баланс"""
     user_id = message.from_user.id
-    referral_code = f"REF{user_id}"
+    bot_username = (await message.bot.me()).username
     
-    # Проверяем, есть ли у пользователя реферальный код
-    user = await db.get_user(user_id)
-    if user and user.get("referral_code"):
-        referral_code = user["referral_code"]
+    conn = await get_connection()
+    try:
+        cursor = await conn.execute(
+            "SELECT balance, referrer_id FROM users WHERE id = ?",
+            (user_id,)
+        )
+        user = await cursor.fetchone()
+        
+        cursor = await conn.execute(
+            "SELECT COUNT(*) as cnt FROM users WHERE referrer_id = ?",
+            (user_id,)
+        )
+        referrals_count = (await cursor.fetchone())["cnt"]
+    finally:
+        await conn.close()
+
+    if not user:
+        await message.answer("❌ Пользователь не найден. Нажмите /start")
+        return
+
+    ref_link = f"https://t.me/{bot_username}?start=ref_{user_id}"
     
-    # Получаем количество приглашённых
-    referrals_count = await db.get_referrals_count(user_id)
-    
-    await message.answer(
-        "👥 <b>Реферальная программа</b>\n\n"
-        f"Ваш реферальный код: <code>{referral_code}</code>\n\n"
-        f"Приглашено друзей: {referrals_count}\n\n"
-        "🎁 <b>Как это работает:</b>\n"
-        "1. Поделитесь вашим реферальным кодом с друзьями\n"
-        "2. Друг вводит ваш код при регистрации\n"
-        "3. Вы получаете бонусы на счёт\n\n"
-        "📎 Ваша реферальная ссылка:\n"
-        f"<code>https://t.me/CyberMarketBot?start={referral_code}</code>",
-        parse_mode="HTML"
+    text = (
+        f"👥 <b>Реферальная программа</b>\n\n"
+        f"🔗 Ваша реферальная ссылка:\n<code>{ref_link}</code>\n\n"
+        f"💰 Ваш баланс: <b>{user['balance']}₽</b>\n"
+        f"👤 Приглашено пользователей: <b>{referrals_count}</b>\n\n"
+        f"Приглашайте друзей и получайте бонусы на баланс!"
     )
-
-
-@router.callback_query(F.data == "back_to_menu")
-async def back_to_menu_callback(callback: CallbackQuery, state: FSMContext):
-    """Вернуться в главное меню."""
-    await state.clear()
-    user_id = callback.from_user.id
-    is_admin = (user_id == settings.ADMIN_ID)
     
-    await callback.message.delete()
-    await callback.message.answer(
-        "🏠 <b>Главное меню</b>\n\n"
-        "Выберите раздел:",
-        reply_markup=main_menu_kb(is_admin=is_admin),
-        parse_mode="HTML"
+    await message.answer(text)
+
+
+@router.message(F.text == "⭐ Отзывы")
+async def show_reviews(message: Message) -> None:
+    """Показать отзывы покупателей"""
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="✍️ Оставить отзыв", callback_data="leave_review")],
+            [InlineKeyboardButton(text="📝 Все отзывы", callback_data="all_reviews")]
+        ]
+    )
+    
+    text = (
+        "⭐ <b>Отзывы наших покупателей</b>\n\n"
+        "🟢 <b>Алексей:</b> \"Отличный магазин! Всё пришло мгновенно, "
+        "скрипты работают идеально. Рекомендую!\"\n\n"
+        "🟢 <b>Мария:</b> \"Купила курс по Python, всё чётко и понятно. "
+        "Поддержка отвечает быстро. 10/10!\"\n\n"
+        "🟢 <b>Дмитрий:</b> \"Пользуюсь софтом уже месяц, всё стабильно. "
+        "Цены адекватные, товары качественные.\"\n\n"
+        "🟢 <b>Елена:</b> \"Заказывала скрипт для автоматизации, "
+        "всё работает как заявлено. Спасибо!\"\n\n"
+        "⬇️ Хотите поделиться своим мнением? Жмите кнопку ниже!"
+    )
+    
+    await message.answer(text, reply_markup=keyboard)
+
+
+@router.callback_query(F.data == "leave_review")
+async def leave_review(callback: CallbackQuery) -> None:
+    """Оставить отзыв"""
+    await callback.message.edit_text(
+        "📝 <b>Оставить отзыв</b>\n\n"
+        "Напишите ваш отзыв в чат, и он будет опубликован после модерации.\n\n"
+        "Формат: <code>Ваш отзыв</code>",
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_reviews")]
+            ]
+        )
     )
     await callback.answer()
 
 
-@router.message(F.text == "🔙 В меню")
-async def back_to_menu_handler(message: Message, state: FSMContext):
-    """Вернуться в главное меню."""
-    await state.clear()
-    user_id = message.from_user.id
-    is_admin = (user_id == settings.ADMIN_ID)
-    
-    await message.answer(
-        "🏠 <b>Главное меню</b>\n\n"
-        "Выберите раздел:",
-        reply_markup=main_menu_kb(is_admin=is_admin),
-        parse_mode="HTML"
+@router.callback_query(F.data == "all_reviews")
+async def all_reviews(callback: CallbackQuery) -> None:
+    """Показать все отзывы"""
+    text = (
+        "📚 <b>Все отзывы</b>\n\n"
+        "⭐ <b>Алексей:</b> \"Отличный магазин! Всё пришло мгновенно, "
+        "скрипты работают идеально. Рекомендую!\"\n\n"
+        "⭐ <b>Мария:</b> \"Купила курс по Python, всё чётко и понятно. "
+        "Поддержка отвечает быстро. 10/10!\"\n\n"
+        "⭐ <b>Дмитрий:</b> \"Пользуюсь софтом уже месяц, всё стабильно. "
+        "Цены адекватные, товары качественные.\"\n\n"
+        "⭐ <b>Елена:</b> \"Заказывала скрипт для автоматизации, "
+        "всё работает как заявлено. Спасибо!\"\n\n"
+        "⭐ <b>Игорь:</b> \"Быстрая доставка, качественный товар. "
+        "Обязательно вернусь ещё!\"\n\n"
+        "⭐ <b>Ольга:</b> \"Лучший магазин цифровых товаров! "
+        "Всё честно и без обмана.\""
     )
-
-
-async def show_support(message: Message, state: FSMContext):
-    """Показать меню поддержки."""
-    await message.answer(
-        "🆘 <b>Служба поддержки</b>\n\n"
-        "Опишите вашу проблему или вопрос, и мы ответим вам в ближайшее время.\n\n"
-        "Напишите ваше сообщение:",
-        parse_mode="HTML",
-        reply_markup=back_to_menu_kb()
-    )
-    await state.set_state(SupportStates.waiting_message)
-
-
-async def referral_program(message: Message):
-    """Показать реферальную программу."""
-    user_id = message.from_user.id
-    referral_code = f"REF{user_id}"
     
-    user = await db.get_user(user_id)
-    if user and user.get("referral_code"):
-        referral_code = user["referral_code"]
-    
-    referrals_count = await db.get_referrals_count(user_id)
-    
-    await message.answer(
-        "👥 <b>Реферальная программа</b>\n\n"
-        f"Ваш реферальный код: <code>{referral_code}</code>\n\n"
-        f"Приглашено друзей: {referrals_count}\n\n"
-        "🎁 <b>Как это работает:</b>\n"
-        "1. Поделитесь вашим реферальным кодом с друзьями\n"
-        "2. Друг вводит ваш код при регистрации\n"
-        "3. Вы получаете бонусы на счёт\n\n"
-        "📎 Ваша реферальная ссылка:\n"
-        f"<code>https://t.me/CyberMarketBot?start={referral_code}</code>",
-        parse_mode="HTML",
-        reply_markup=back_to_menu_kb()
+    await callback.message.edit_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_reviews")]
+            ]
+        )
     )
+    await callback.answer()
 
 
-async def show_reviews(message: Message):
-    """Показать отзывы о магазине."""
-    await message.answer(
-        "⭐ <b>Отзывы наших клиентов:</b>\n\n"
-        "🌟 «Отличный магазин! Всё работает, товар пришёл мгновенно» — Алексей\n"
-        "🌟 «Быстрая поддержка, качественные товары. Рекомендую!» — Мария\n"
-        "🌟 «Покупаю здесь постоянно, всё на высшем уровне» — Дмитрий\n\n"
-        "Хотите оставить отзыв? Напишите его в чат, и мы обязательно его опубликуем!",
-        parse_mode="HTML",
-        reply_markup=back_to_menu_kb()
+@router.callback_query(F.data == "back_to_reviews")
+async def back_to_reviews(callback: CallbackQuery) -> None:
+    """Вернуться к отзывам"""
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="✍️ Оставить отзыв", callback_data="leave_review")],
+            [InlineKeyboardButton(text="📝 Все отзывы", callback_data="all_reviews")]
+        ]
     )
+    
+    text = (
+        "⭐ <b>Отзывы наших покупателей</b>\n\n"
+        "🟢 <b>Алексей:</b> \"Отличный магазин! Всё пришло мгновенно, "
+        "скрипты работают идеально. Рекомендую!\"\n\n"
+        "🟢 <b>Мария:</b> \"Купила курс по Python, всё чётко и понятно. "
+        "Поддержка отвечает быстро. 10/10!\"\n\n"
+        "🟢 <b>Дмитрий:</b> \"Пользуюсь софтом уже месяц, всё стабильно. "
+        "Цены адекватные, товары качественные.\"\n\n"
+        "🟢 <b>Елена:</b> \"Заказывала скрипт для автоматизации, "
+        "всё работает как заявлено. Спасибо!\"\n\n"
+        "⬇️ Хотите поделиться своим мнением? Жмите кнопку ниже!"
+    )
+    
+    await callback.message.edit_text(text, reply_markup=keyboard)
+    await callback.answer()
+
+
+@router.message(F.text == "🆘 Поддержка")
+async def support_info(message: Message) -> None:
+    """Показать контакты поддержки"""
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="📨 Написать в поддержку", url="https://t.me/support")],
+            [InlineKeyboardButton(text="📖 FAQ", callback_data="faq")]
+        ]
+    )
+    
+    text = (
+        "🆘 <b>Поддержка</b>\n\n"
+        "Если у вас возникли вопросы или проблемы, мы всегда готовы помочь!\n\n"
+        "📨 <b>Способы связи:</b>\n"
+        "• Telegram: @support\n"
+        "• Email: support@cybermarket.ru\n"
+        "• Время работы: 24/7\n\n"
+        "⏱ Среднее время ответа: до 15 минут\n\n"
+        "📖 Также вы можете ознакомиться с частыми вопросами в разделе FAQ."
+    )
+    
+    await message.answer(text, reply_markup=keyboard)
+
+
+@router.callback_query(F.data == "faq")
+async def show_faq(callback: CallbackQuery) -> None:
+    """Показать FAQ"""
+    text = (
+        "📖 <b>Часто задаваемые вопросы</b>\n\n"
+        "❓ <b>Как получить товар после оплаты?</b>\n"
+        "После оплаты товар автоматически отправляется вам в чат.\n\n"
+        "❓ <b>Как долго обрабатывается заказ?</b>\n"
+        "Все заказы обрабатываются мгновенно в автоматическом режиме.\n\n"
+        "❓ <b>Есть ли гарантия на товары?</b>\n"
+        "Да, на все товары предоставляется гарантия 30 дней.\n\n"
+        "❓ <b>Как вернуть деньги?</b>\n"
+        "Если товар не работает, напишите в поддержку в течение 24 часов.\n\n"
+        "❓ <b>Как работает реферальная программа?</b>\n"
+        "Приглашайте друзей по своей ссылке и получайте бонусы на баланс."
+    )
+    
+    await callback.message.edit_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_support")]
+            ]
+        )
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "back_to_support")
+async def back_to_support(callback: CallbackQuery) -> None:
+    """Вернуться к поддержке"""
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="📨 Написать в поддержку", url="https://t.me/support")],
+            [InlineKeyboardButton(text="📖 FAQ", callback_data="faq")]
+        ]
+    )
+    
+    text = (
+        "🆘 <b>Поддержка</b>\n\n"
+        "Если у вас возникли вопросы или проблемы, мы всегда готовы помочь!\n\n"
+        "📨 <b>Способы связи:</b>\n"
+        "• Telegram: @support\n"
+        "• Email: support@cybermarket.ru\n"
+        "• Время работы: 24/7\n\n"
+        "⏱ Среднее время ответа: до 15 минут\n\n"
+        "📖 Также вы можете ознакомиться с частыми вопросами в разделе FAQ."
+    )
+    
+    await callback.message.edit_text(text, reply_markup=keyboard)
+    await callback.answer()
