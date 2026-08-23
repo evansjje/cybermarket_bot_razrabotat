@@ -2,9 +2,8 @@
 import asyncio
 import logging
 from aiogram import Bot, Dispatcher
-from aiogram.client.default import DefaultBotProperties
-from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.types import BotCommand
 
 from config import settings
 from database import Database
@@ -18,38 +17,46 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+async def set_commands(bot: Bot) -> None:
+    """Установка команд бота"""
+    commands = [
+        BotCommand(command="/start", description="Запустить бота"),
+        BotCommand(command="/catalog", description="Открыть каталог"),
+        BotCommand(command="/cart", description="Открыть корзину"),
+        BotCommand(command="/help", description="Помощь"),
+    ]
+    await bot.set_my_commands(commands)
+
+
 async def on_startup(bot: Bot, db: Database) -> None:
     """Действия при запуске бота"""
-    await db.connect()
-    logger.info("Database connected successfully")
-    
-    # Уведомление администраторов о запуске
-    for admin_id in settings.ADMIN_IDS:
-        try:
-            await bot.send_message(
-                admin_id,
-                "🚀 Бот CyberMarket запущен и готов к работе!"
-            )
-        except Exception as e:
-            logger.error(f"Failed to notify admin {admin_id}: {e}")
+    logger.info("Бот запускается...")
+    await db.init_db()
+    await set_commands(bot)
+    logger.info("База данных инициализирована")
+    logger.info("Бот успешно запущен!")
 
 
 async def on_shutdown(bot: Bot, db: Database) -> None:
     """Действия при остановке бота"""
-    await db.close()
-    logger.info("Database connection closed")
+    logger.info("Бот останавливается...")
+    await bot.session.close()
+    logger.info("Бот остановлен")
 
 
 async def main() -> None:
-    """Точка входа в приложение"""
+    """Главная функция запуска бота"""
+    # Проверка токена
+    if settings.BOT_TOKEN == "YOUR_BOT_TOKEN_HERE":
+        logger.error("Пожалуйста, установите BOT_TOKEN в .env файле!")
+        return
+
     # Инициализация бота и диспетчера
-    bot = Bot(
-        token=settings.BOT_TOKEN,
-        default=DefaultBotProperties(parse_mode=ParseMode.HTML)
-    )
-    dp = Dispatcher(storage=MemoryStorage())
+    bot = Bot(token=settings.BOT_TOKEN)
+    storage = MemoryStorage()
+    dp = Dispatcher(storage=storage)
     
-    # Создание экземпляра базы данных
+    # Инициализация базы данных
     db = Database()
     
     # Регистрация роутеров
@@ -57,23 +64,15 @@ async def main() -> None:
     dp.include_router(payment.router)
     dp.include_router(admin.router)
     
-    # Регистрация функций запуска и остановки
+    # Регистрация обработчиков запуска/остановки
     dp.startup.register(on_startup)
     dp.shutdown.register(on_shutdown)
     
-    # Передача зависимостей в роутеры
-    dp.workflow_data.update({
-        'db': db,
-        'bot': bot
-    })
-    
-    logger.info("Starting CyberMarket Bot...")
-    
+    # Запуск бота
     try:
-        # Запуск бота
         await dp.start_polling(bot, db=db)
     except Exception as e:
-        logger.error(f"Bot stopped with error: {e}")
+        logger.error(f"Ошибка при запуске бота: {e}")
     finally:
         await bot.session.close()
 
@@ -82,6 +81,6 @@ if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        logger.info("Bot stopped by user")
+        logger.info("Бот остановлен пользователем")
     except Exception as e:
-        logger.error(f"Fatal error: {e}")
+        logger.error(f"Критическая ошибка: {e}")
