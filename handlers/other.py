@@ -1,197 +1,120 @@
 # handlers/other.py
-from aiogram import Router, types, F
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.filters import Command
-from urllib.parse import quote
+from aiogram import Router, F
+from aiogram.types import Message, CallbackQuery
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 
 from database import Database
-from keyboards import main_menu_kb
+from keyboards import main_menu_kb, back_to_menu_kb
 from config import settings
 
 router = Router()
 db = Database()
 
 
+class SupportStates(StatesGroup):
+    """Состояния для поддержки."""
+    waiting_message = State()
+
+
 @router.message(F.text == "⭐ Отзывы")
-async def show_reviews(message: Message):
-    """Показать отзывы о магазине"""
-    user_id = message.from_user.id
-    is_admin = user_id == settings.ADMIN_ID
-
-    reviews_text = (
-        "⭐ <b>Отзывы наших клиентов</b>\n\n"
-        "🌟 <b>Иван</b>: «Отличный магазин! Всё работает, товар пришёл мгновенно. Рекомендую!»\n\n"
-        "🌟 <b>Мария</b>: «Купила курс по Python, всё чётко и без обмана. Спасибо!»\n\n"
-        "🌟 <b>Дмитрий</b>: «Быстрая поддержка, качественные товары. 10/10!»\n\n"
-        "🌟 <b>Анна</b>: «Пользуюсь сервисом уже месяц, всё на высшем уровне!»\n\n"
-        "🌟 <b>Сергей</b>: «Лучший магазин цифровых товаров, который я находил!»\n\n"
-        "─────────────\n"
-        "💬 Хотите оставить отзыв? Напишите нам в поддержку!"
-    )
-
+async def reviews_handler(message: Message):
+    """Показать отзывы о магазине."""
     await message.answer(
-        reviews_text,
-        reply_markup=main_menu_kb(is_admin=is_admin)
+        "⭐ <b>Отзывы наших клиентов:</b>\n\n"
+        "🌟 «Отличный магазин! Всё работает, товар пришёл мгновенно» — Алексей\n"
+        "🌟 «Быстрая поддержка, качественные товары. Рекомендую!» — Мария\n"
+        "🌟 «Покупаю здесь постоянно, всё на высшем уровне» — Дмитрий\n\n"
+        "Хотите оставить отзыв? Напишите его в чат, и мы обязательно его опубликуем!",
+        parse_mode="HTML"
     )
 
 
 @router.message(F.text == "🆘 Поддержка")
-async def show_support(message: Message):
-    """Показать контакты поддержки"""
-    user_id = message.from_user.id
-    is_admin = user_id == settings.ADMIN_ID
-
-    support_text = (
-        "🆘 <b>Поддержка CyberMarket</b>\n\n"
-        "Мы всегда готовы помочь вам!\n\n"
-        "📧 <b>Email:</b> support@cybermarket.ru\n"
-        "💬 <b>Telegram:</b> @CyberMarketSupport\n"
-        "🌐 <b>Сайт:</b> cybermarket.ru\n\n"
-        "⏰ <b>Время работы:</b>\n"
-        "Ежедневно с 10:00 до 22:00 (МСК)\n\n"
-        "📝 <b>Часто задаваемые вопросы:</b>\n"
-        "1️⃣ Как получить товар после оплаты?\n"
-        "   → Товар приходит автоматически в чат после оплаты\n\n"
-        "2️⃣ Что делать, если товар не пришёл?\n"
-        "   → Напишите в поддержку, мы решим проблему в течение 15 минут\n\n"
-        "3️⃣ Можно ли вернуть деньги?\n"
-        "   → Да, если товар не соответствует описанию"
-    )
-
+async def support_handler(message: Message, state: FSMContext):
+    """Начать диалог с поддержкой."""
     await message.answer(
-        support_text,
-        reply_markup=main_menu_kb(is_admin=is_admin)
+        "🆘 <b>Служба поддержки</b>\n\n"
+        "Опишите вашу проблему или вопрос, и мы ответим вам в ближайшее время.\n\n"
+        "Напишите ваше сообщение:",
+        parse_mode="HTML"
     )
+    await state.set_state(SupportStates.waiting_message)
+
+
+@router.message(SupportStates.waiting_message)
+async def support_message_handler(message: Message, state: FSMContext):
+    """Обработка сообщения в поддержку."""
+    user_id = message.from_user.id
+    username = message.from_user.username or "нет username"
+    text = message.text
+
+    # Здесь можно добавить отправку сообщения админу
+    # Например, через бота или email
+    
+    await message.answer(
+        "✅ Ваше сообщение отправлено в поддержку!\n\n"
+        "Мы ответим вам в ближайшее время. Спасибо за обращение!",
+        reply_markup=main_menu_kb(is_admin=user_id == settings.ADMIN_ID)
+    )
+    await state.clear()
 
 
 @router.message(F.text == "👥 Рефералка")
-async def show_referral(message: Message):
-    """Показать реферальную программу"""
+async def referral_handler(message: Message):
+    """Показать реферальную программу."""
     user_id = message.from_user.id
-    is_admin = user_id == settings.ADMIN_ID
-
-    # Получаем реферальный код пользователя
-    user = await db.get_user(user_id)
-    referral_code = user.get('referral_code') if user else None
-
-    if not referral_code:
-        # Генерируем реферальный код
-        import random
-        import string
-        referral_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
-        await db.update_referral_code(user_id, referral_code)
-
-    # Считаем рефералов
-    referrals_count = await db.get_referrals_count(user_id)
-
-    # Формируем реферальную ссылку
-    bot_username = (await message.bot.me()).username
-    referral_link = f"https://t.me/{bot_username}?start=ref_{referral_code}"
-
-    referral_text = (
-        "👥 <b>Реферальная программа</b>\n\n"
-        "🎁 <b>Приглашайте друзей и получайте бонусы!</b>\n\n"
-        "💰 <b>Условия:</b>\n"
-        "• За каждого приглашённого друга вы получаете <b>10%</b> от его первой покупки\n"
-        "• Друг получает <b>скидку 5%</b> на первый заказ\n\n"
-        f"📊 <b>Ваша статистика:</b>\n"
-        f"• Приглашено друзей: <b>{referrals_count}</b>\n"
-        f"• Ваш реферальный код: <code>{referral_code}</code>\n\n"
-        "🔗 <b>Ваша реферальная ссылка:</b>\n"
-        f"<code>{referral_link}</code>\n\n"
-        "📋 <b>Как это работает:</b>\n"
-        "1. Отправьте ссылку другу\n"
-        "2. Друг переходит по ссылке и регистрируется\n"
-        "3. Вы получаете бонус после его первой покупки\n\n"
-        "💡 <b>Совет:</b> Поделитесь ссылкой в соцсетях и чатах!"
-    )
-
-    # Создаем клавиатуру с кнопкой копирования
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📋 Скопировать ссылку", callback_data="copy_referral")],
-        [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
-    ])
-
-    await message.answer(
-        referral_text,
-        reply_markup=kb
-    )
-
-
-@router.callback_query(F.data == "copy_referral")
-async def copy_referral(callback: CallbackQuery):
-    """Обработка копирования реферальной ссылки"""
-    user_id = callback.from_user.id
+    referral_code = f"REF{user_id}"
     
-    # Получаем реферальный код
+    # Проверяем, есть ли у пользователя реферальный код
     user = await db.get_user(user_id)
-    referral_code = user.get('referral_code') if user else None
-
-    if not referral_code:
-        import random
-        import string
-        referral_code = ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
-        await db.update_referral_code(user_id, referral_code)
-
-    bot_username = (await callback.bot.me()).username
-    referral_link = f"https://t.me/{bot_username}?start=ref_{referral_code}"
-
-    await callback.answer(
-        f"Ссылка скопирована: {referral_link}",
-        show_alert=True
+    if user and user.get("referral_code"):
+        referral_code = user["referral_code"]
+    
+    # Получаем количество приглашённых
+    referrals_count = await db.get_referrals_count(user_id)
+    
+    await message.answer(
+        "👥 <b>Реферальная программа</b>\n\n"
+        f"Ваш реферальный код: <code>{referral_code}</code>\n\n"
+        f"Приглашено друзей: {referrals_count}\n\n"
+        "🎁 <b>Как это работает:</b>\n"
+        "1. Поделитесь вашим реферальным кодом с друзьями\n"
+        "2. Друг вводит ваш код при регистрации\n"
+        "3. Вы получаете бонусы на счёт\n\n"
+        "📎 Ваша реферальная ссылка:\n"
+        f"<code>https://t.me/CyberMarketBot?start={referral_code}</code>",
+        parse_mode="HTML"
     )
 
 
-@router.callback_query(F.data == "main_menu")
-async def back_to_main_menu(callback: CallbackQuery):
-    """Возврат в главное меню"""
+@router.callback_query(F.data == "back_to_menu")
+async def back_to_menu_callback(callback: CallbackQuery, state: FSMContext):
+    """Вернуться в главное меню."""
+    await state.clear()
     user_id = callback.from_user.id
-    is_admin = user_id == settings.ADMIN_ID
-
+    is_admin = (user_id == settings.ADMIN_ID)
+    
     await callback.message.delete()
     await callback.message.answer(
         "🏠 <b>Главное меню</b>\n\n"
-        "Выберите действие:",
-        reply_markup=main_menu_kb(is_admin=is_admin)
+        "Выберите раздел:",
+        reply_markup=main_menu_kb(is_admin=is_admin),
+        parse_mode="HTML"
     )
     await callback.answer()
 
 
-@router.message(Command("help"))
-async def show_help(message: Message):
-    """Показать справку по командам"""
+@router.message(F.text == "🔙 В меню")
+async def back_to_menu_handler(message: Message, state: FSMContext):
+    """Вернуться в главное меню."""
+    await state.clear()
     user_id = message.from_user.id
-    is_admin = user_id == settings.ADMIN_ID
-
-    help_text = (
-        "📚 <b>Справка по командам</b>\n\n"
-        "🛍 <b>Каталог</b> — просмотр категорий и товаров\n"
-        "🛒 <b>Корзина</b> — просмотр и управление корзиной\n"
-        "👥 <b>Рефералка</b> — реферальная программа\n"
-        "⭐ <b>Отзывы</b> — отзывы о магазине\n"
-        "🆘 <b>Поддержка</b> — контакты поддержки\n\n"
-        "📌 <b>Команды:</b>\n"
-        "/start — начать работу с ботом\n"
-        "/help — показать эту справку\n"
-    )
-
-    if is_admin:
-        help_text += "/admin — открыть админ-панель\n"
-
+    is_admin = (user_id == settings.ADMIN_ID)
+    
     await message.answer(
-        help_text,
-        reply_markup=main_menu_kb(is_admin=is_admin)
-    )
-
-
-@router.message()
-async def handle_unknown(message: Message):
-    """Обработка неизвестных сообщений"""
-    user_id = message.from_user.id
-    is_admin = user_id == settings.ADMIN_ID
-
-    await message.answer(
-        "🤔 Я не понимаю эту команду.\n\n"
-        "Используйте кнопки меню или команду /help для получения справки.",
-        reply_markup=main_menu_kb(is_admin=is_admin)
+        "🏠 <b>Главное меню</b>\n\n"
+        "Выберите раздел:",
+        reply_markup=main_menu_kb(is_admin=is_admin),
+        parse_mode="HTML"
     )

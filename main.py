@@ -14,8 +14,8 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-async def main():
-    """Главная функция запуска бота"""
+async def main() -> None:
+    """Главная функция запуска бота."""
     # Инициализация базы данных
     db = Database()
     await db.init_db()
@@ -23,7 +23,7 @@ async def main():
 
     # Создание бота и диспетчера
     bot = Bot(
-        token=settings.BOT_TOKEN.get_secret_value(),
+        token=settings.bot_token,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML)
     )
     dp = Dispatcher()
@@ -42,11 +42,10 @@ async def main():
         await dp.start_polling(bot)
     finally:
         await bot.session.close()
-        logger.info("Бот остановлен")
 
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except (KeyboardInterrupt, SystemExit):
-        logger.info("Бот остановлен вручную")
+        logger.info("Бот остановлен")

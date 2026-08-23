@@ -1,12 +1,15 @@
 # handlers/cart.py
-from aiogram import Router, types, F
+from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 
 from database import Database
 from keyboards import (
-    cart_kb,
     main_menu_kb,
-    checkout_kb
+    cart_kb,
+    confirm_order_kb,
+    back_to_menu_kb
 )
 from config import settings
 
@@ -14,206 +17,253 @@ router = Router()
 db = Database()
 
 
+class CartStates(StatesGroup):
+    """Состояния для корзины."""
+    viewing_cart = State()
+    confirming_order = State()
+
+
 @router.message(F.text == "🛒 Корзина")
-async def show_cart(message: Message):
-    """Показать корзину пользователя"""
+async def show_cart(message: Message, state: FSMContext):
+    """Показать корзину пользователя."""
     user_id = message.from_user.id
     cart_items = await db.get_cart(user_id)
     
     if not cart_items:
         await message.answer(
             "🛒 Ваша корзина пуста!\n\n"
-            "Загляните в каталог и выберите что-нибудь интересное:",
+            "Загляните в каталог, чтобы выбрать товары:",
             reply_markup=main_menu_kb(is_admin=user_id == settings.ADMIN_ID)
         )
         return
     
-    total_price = sum(item['price'] * item['quantity'] for item in cart_items)
-    
+    # Формируем текст корзины
     cart_text = "🛒 <b>Ваша корзина:</b>\n\n"
-    for item in cart_items:
-        cart_text += (
-            f"<b>{item['name']}</b>\n"
-            f"💰 Цена: {item['price']}₽\n"
-            f"📦 Количество: {item['quantity']}\n"
-            f"─────────────\n"
-        )
+    total_price = 0
     
-    cart_text += f"\n<b>Итого: {total_price}₽</b>"
+    for item in cart_items:
+        product = item.get("product", {})
+        name = product.get("name", "Товар")
+        price = product.get("price", 0)
+        quantity = item.get("quantity", 1)
+        item_total = price * quantity
+        total_price += item_total
+        
+        cart_text += f"📦 <b>{name}</b>\n"
+        cart_text += f"💰 Цена: {price}₽ × {quantity} = {item_total}₽\n"
+        cart_text += f"🆔 ID: {item['id']}\n\n"
+    
+    cart_text += f"━━━━━━━━━━━━━━━\n"
+    cart_text += f"<b>Итого: {total_price}₽</b>"
     
     await message.answer(
         cart_text,
-        reply_markup=cart_kb(cart_items)
+        reply_markup=cart_kb(cart_items),
+        parse_mode="HTML"
     )
+    await state.set_state(CartStates.viewing_cart)
 
 
 @router.callback_query(F.data.startswith("cart_remove_"))
-async def remove_from_cart(callback: CallbackQuery):
-    """Удалить товар из корзины"""
+async def remove_from_cart(callback: CallbackQuery, state: FSMContext):
+    """Удалить товар из корзины."""
     cart_item_id = int(callback.data.split("_")[2])
-    
-    await db.remove_from_cart(cart_item_id)
-    
-    # Показываем обновленную корзину
     user_id = callback.from_user.id
+    
+    await db.remove_from_cart(cart_item_id, user_id)
+    
+    # Показываем обновлённую корзину
     cart_items = await db.get_cart(user_id)
     
     if not cart_items:
         await callback.message.edit_text(
             "🛒 Ваша корзина пуста!\n\n"
-            "Загляните в каталог и выберите что-нибудь интересное:",
-            reply_markup=main_menu_kb(is_admin=user_id == settings.ADMIN_ID)
+            "Загляните в каталог, чтобы выбрать товары:",
+            reply_markup=back_to_menu_kb()
         )
-        await callback.answer("Товар удален из корзины")
+        await state.clear()
         return
     
-    total_price = sum(item['price'] * item['quantity'] for item in cart_items)
-    
+    # Формируем текст корзины
     cart_text = "🛒 <b>Ваша корзина:</b>\n\n"
-    for item in cart_items:
-        cart_text += (
-            f"<b>{item['name']}</b>\n"
-            f"💰 Цена: {item['price']}₽\n"
-            f"📦 Количество: {item['quantity']}\n"
-            f"─────────────\n"
-        )
+    total_price = 0
     
-    cart_text += f"\n<b>Итого: {total_price}₽</b>"
+    for item in cart_items:
+        product = item.get("product", {})
+        name = product.get("name", "Товар")
+        price = product.get("price", 0)
+        quantity = item.get("quantity", 1)
+        item_total = price * quantity
+        total_price += item_total
+        
+        cart_text += f"📦 <b>{name}</b>\n"
+        cart_text += f"💰 Цена: {price}₽ × {quantity} = {item_total}₽\n"
+        cart_text += f"🆔 ID: {item['id']}\n\n"
+    
+    cart_text += f"━━━━━━━━━━━━━━━\n"
+    cart_text += f"<b>Итого: {total_price}₽</b>"
     
     await callback.message.edit_text(
         cart_text,
-        reply_markup=cart_kb(cart_items)
+        reply_markup=cart_kb(cart_items),
+        parse_mode="HTML"
     )
-    await callback.answer("Товар удален из корзины")
+    await callback.answer("✅ Товар удалён из корзины")
 
 
 @router.callback_query(F.data == "cart_clear")
-async def clear_cart(callback: CallbackQuery):
-    """Очистить корзину"""
+async def clear_cart(callback: CallbackQuery, state: FSMContext):
+    """Очистить корзину."""
     user_id = callback.from_user.id
-    
     await db.clear_cart(user_id)
     
     await callback.message.edit_text(
         "🗑 Корзина очищена!\n\n"
-        "Загляните в каталог и выберите что-нибудь интересное:",
-        reply_markup=main_menu_kb(is_admin=user_id == settings.ADMIN_ID)
+        "Загляните в каталог, чтобы выбрать товары:",
+        reply_markup=back_to_menu_kb()
     )
-    await callback.answer("Корзина очищена")
+    await state.clear()
+    await callback.answer("✅ Корзина очищена")
 
 
 @router.callback_query(F.data == "cart_checkout")
-async def checkout(callback: CallbackQuery):
-    """Переход к оформлению заказа"""
+async def checkout(callback: CallbackQuery, state: FSMContext):
+    """Переход к оформлению заказа."""
     user_id = callback.from_user.id
     cart_items = await db.get_cart(user_id)
     
     if not cart_items:
         await callback.message.edit_text(
             "🛒 Ваша корзина пуста!\n\n"
-            "Загляните в каталог и выберите что-нибудь интересное:",
-            reply_markup=main_menu_kb(is_admin=user_id == settings.ADMIN_ID)
+            "Загляните в каталог, чтобы выбрать товары:",
+            reply_markup=back_to_menu_kb()
         )
-        await callback.answer()
+        await state.clear()
         return
     
-    total_price = sum(item['price'] * item['quantity'] for item in cart_items)
+    # Формируем текст заказа
+    order_text = "🧾 <b>Подтверждение заказа:</b>\n\n"
+    total_price = 0
     
-    checkout_text = (
-        "🧾 <b>Оформление заказа</b>\n\n"
-        f"Товаров в корзине: {len(cart_items)}\n"
-        f"<b>Сумма к оплате: {total_price}₽</b>\n\n"
-        "Для оплаты нажмите кнопку ниже. "
-        "После оплаты товары будут отправлены вам в личные сообщения."
-    )
+    for item in cart_items:
+        product = item.get("product", {})
+        name = product.get("name", "Товар")
+        price = product.get("price", 0)
+        quantity = item.get("quantity", 1)
+        item_total = price * quantity
+        total_price += item_total
+        
+        order_text += f"📦 <b>{name}</b> — {price}₽ × {quantity} = {item_total}₽\n"
+    
+    order_text += f"\n━━━━━━━━━━━━━━━\n"
+    order_text += f"<b>Итого к оплате: {total_price}₽</b>\n\n"
+    order_text += "Подтверждаете заказ?"
     
     await callback.message.edit_text(
-        checkout_text,
-        reply_markup=checkout_kb()
+        order_text,
+        reply_markup=confirm_order_kb(),
+        parse_mode="HTML"
     )
-    await callback.answer()
+    await state.set_state(CartStates.confirming_order)
 
 
-@router.callback_query(F.data == "checkout_confirm")
-async def confirm_checkout(callback: CallbackQuery):
-    """Подтверждение оплаты заказа"""
+@router.callback_query(F.data == "order_confirm")
+async def confirm_order(callback: CallbackQuery, state: FSMContext):
+    """Подтверждение заказа."""
     user_id = callback.from_user.id
     cart_items = await db.get_cart(user_id)
     
     if not cart_items:
         await callback.message.edit_text(
-            "🛒 Ваша корзина пуста!\n\n"
-            "Загляните в каталог и выберите что-нибудь интересное:",
-            reply_markup=main_menu_kb(is_admin=user_id == settings.ADMIN_ID)
+            "❌ Ошибка: корзина пуста!",
+            reply_markup=back_to_menu_kb()
         )
-        await callback.answer()
+        await state.clear()
         return
     
-    total_price = sum(item['price'] * item['quantity'] for item in cart_items)
+    # Создаём заказ
+    total_price = sum(
+        item.get("product", {}).get("price", 0) * item.get("quantity", 1)
+        for item in cart_items
+    )
     
-    # Создаем заказ
     order_id = await db.create_order(
         user_id=user_id,
         items=cart_items,
         total_price=total_price
     )
     
-    # Очищаем корзину после создания заказа
+    # Очищаем корзину
     await db.clear_cart(user_id)
     
-    # Формируем подтверждение
+    # Формируем текст подтверждения
     order_text = (
-        "✅ <b>Заказ успешно оформлен!</b>\n\n"
-        f"📋 Номер заказа: <b>#{order_id}</b>\n"
-        f"💰 Сумма: <b>{total_price}₽</b>\n\n"
-        "🎁 Ваши товары:\n"
-    )
-    
-    for item in cart_items:
-        order_text += f"• {item['name']} — {item['price']}₽\n"
-    
-    order_text += (
-        "\n📩 Товары будут отправлены вам в ближайшее время.\n"
-        "Спасибо за покупку!"
+        f"✅ <b>Заказ #{order_id} оформлен!</b>\n\n"
+        f"💰 Сумма: {total_price}₽\n"
+        f"📦 Товаров: {len(cart_items)}\n\n"
+        f"⏳ Ожидайте подтверждения оплаты.\n"
+        f"С вами свяжется администратор."
     )
     
     await callback.message.edit_text(
         order_text,
-        reply_markup=main_menu_kb(is_admin=user_id == settings.ADMIN_ID)
+        reply_markup=back_to_menu_kb(),
+        parse_mode="HTML"
     )
-    await callback.answer("Заказ оформлен!")
+    await state.clear()
+    await callback.answer("✅ Заказ оформлен!")
 
 
-@router.callback_query(F.data == "checkout_cancel")
-async def cancel_checkout(callback: CallbackQuery):
-    """Отмена оформления заказа"""
+@router.callback_query(F.data == "order_cancel")
+async def cancel_order(callback: CallbackQuery, state: FSMContext):
+    """Отмена заказа."""
     user_id = callback.from_user.id
     cart_items = await db.get_cart(user_id)
     
     if not cart_items:
         await callback.message.edit_text(
-            "🛒 Ваша корзина пуста!\n\n"
-            "Загляните в каталог и выберите что-нибудь интересное:",
-            reply_markup=main_menu_kb(is_admin=user_id == settings.ADMIN_ID)
+            "🛒 Ваша корзина пуста!",
+            reply_markup=back_to_menu_kb()
         )
-        await callback.answer()
+        await state.clear()
         return
     
-    total_price = sum(item['price'] * item['quantity'] for item in cart_items)
-    
+    # Формируем текст корзины
     cart_text = "🛒 <b>Ваша корзина:</b>\n\n"
-    for item in cart_items:
-        cart_text += (
-            f"<b>{item['name']}</b>\n"
-            f"💰 Цена: {item['price']}₽\n"
-            f"📦 Количество: {item['quantity']}\n"
-            f"─────────────\n"
-        )
+    total_price = 0
     
-    cart_text += f"\n<b>Итого: {total_price}₽</b>"
+    for item in cart_items:
+        product = item.get("product", {})
+        name = product.get("name", "Товар")
+        price = product.get("price", 0)
+        quantity = item.get("quantity", 1)
+        item_total = price * quantity
+        total_price += item_total
+        
+        cart_text += f"📦 <b>{name}</b>\n"
+        cart_text += f"💰 Цена: {price}₽ × {quantity} = {item_total}₽\n"
+        cart_text += f"🆔 ID: {item['id']}\n\n"
+    
+    cart_text += f"━━━━━━━━━━━━━━━\n"
+    cart_text += f"<b>Итого: {total_price}₽</b>"
     
     await callback.message.edit_text(
         cart_text,
-        reply_markup=cart_kb(cart_items)
+        reply_markup=cart_kb(cart_items),
+        parse_mode="HTML"
     )
-    await callback.answer("Оформление отменено")
+    await state.set_state(CartStates.viewing_cart)
+    await callback.answer("❌ Заказ отменён")
+
+
+@router.callback_query(F.data == "back_to_menu")
+async def back_to_menu(callback: CallbackQuery, state: FSMContext):
+    """Возврат в главное меню."""
+    user_id = callback.from_user.id
+    is_admin = (user_id == settings.ADMIN_ID)
+    
+    await callback.message.edit_text(
+        "🏠 Главное меню:",
+        reply_markup=main_menu_kb(is_admin=is_admin)
+    )
+    await state.clear()
