@@ -203,3 +203,60 @@ def back_to_catalog_kb() -> InlineKeyboardMarkup:
         callback_data="back_to_catalog"
     )
     return builder.as_markup()
+
+
+def reviews_kb() -> InlineKeyboardMarkup:
+    """Клавиатура для раздела отзывов"""
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="✍️ Оставить отзыв",
+        callback_data="write_review"
+    )
+    builder.button(
+        text="📖 Все отзывы",
+        callback_data="all_reviews"
+    )
+    builder.button(
+        text="⬅️ Назад",
+        callback_data="back_to_menu"
+    )
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def referrals_kb() -> InlineKeyboardMarkup:
+    """Клавиатура для раздела реферальной системы"""
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="🔗 Моя ссылка",
+        callback_data="my_referral"
+    )
+    builder.button(
+        text="💰 Баланс",
+        callback_data="referral_balance"
+    )
+    builder.button(
+        text="⬅️ Назад",
+        callback_data="back_to_menu"
+    )
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def support_kb() -> InlineKeyboardMarkup:
+    """Клавиатура для раздела поддержки"""
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="📝 Написать в поддержку",
+        callback_data="write_support"
+    )
+    builder.button(
+        text="❓ FAQ",
+        callback_data="faq"
+    )
+    builder.button(
+        text="⬅️ Назад",
+        callback_data="back_to_menu"
+    )
+    builder.adjust(1)
+    return builder.as_markup()
