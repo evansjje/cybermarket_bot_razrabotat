@@ -1,102 +1,148 @@
+# handlers/admin.py
 from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery
 from aiogram.filters import Command
+from aiogram.types import Message, CallbackQuery
 from aiogram.fsm import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 from config import settings
-from database import get_connection
-from keyboards import get_main_menu
+from database import (
+    get_all_users_count,
+    get_all_orders_count,
+    get_all_orders,
+    add_product,
+    get_categories,
+    get_products_by_category,
+    delete_product,
+    get_product
+)
+from keyboards import main_menu_kb
 
 router = Router()
 
 
-class ProductForm(StatesGroup):
+class AddProductForm(StatesGroup):
+    """Форма добавления товара"""
+    category_id = State()
     title = State()
     desc = State()
     price = State()
-    category_id = State()
     file_data = State()
+
+
+def is_admin(user_id: int) -> bool:
+    """Проверка прав администратора"""
+    return user_id in settings.ADMIN_IDS
 
 
 @router.message(F.text == "⚡ Админ-панель")
 @router.message(Command("admin"))
 async def admin_panel(message: Message) -> None:
-    """Админ-панель: статистика и управление"""
+    """Главная админ-панель"""
     user_id = message.from_user.id
-    if user_id not in settings.ADMIN_IDS:
-        await message.answer("⛔️ Доступ запрещен. Вы не администратор.")
+
+    if not is_admin(user_id):
+        await message.answer("⛔️ У вас нет прав доступа к админ-панели.")
         return
 
-    conn = await get_connection()
-    try:
-        cursor = await conn.execute("SELECT COUNT(*) as cnt FROM users")
-        users_count = (await cursor.fetchone())["cnt"]
+    users_count = await get_all_users_count()
+    orders_count = await get_all_orders_count()
 
-        cursor = await conn.execute("SELECT COUNT(*) as cnt FROM orders")
-        orders_count = (await cursor.fetchone())["cnt"]
+    text = (
+        f"⚡ <b>Админ-панель</b>\n\n"
+        f"👥 Пользователей: <b>{users_count}</b>\n"
+        f"📦 Заказов: <b>{orders_count}</b>\n\n"
+        f"Выберите действие:"
+    )
 
-        cursor = await conn.execute("SELECT COUNT(*) as cnt FROM products")
-        products_count = (await cursor.fetchone())["cnt"]
-
-        cursor = await conn.execute("SELECT COUNT(*) as cnt FROM categories")
-        categories_count = (await cursor.fetchone())["cnt"]
-    finally:
-        await conn.close()
-
-    keyboard = InlineKeyboardMarkup(
+    kb = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="➕ Добавить товар", callback_data="admin_add_product")],
-            [InlineKeyboardButton(text="📦 Список товаров", callback_data="admin_list_products")],
-            [InlineKeyboardButton(text="📂 Список категорий", callback_data="admin_list_categories")],
+            [InlineKeyboardButton(text="📦 Добавить товар", callback_data="admin_add_product")],
+            [InlineKeyboardButton(text="🗑 Удалить товар", callback_data="admin_delete_product")],
+            [InlineKeyboardButton(text="📋 Список заказов", callback_data="admin_orders")],
+            [InlineKeyboardButton(text="📊 Статистика", callback_data="admin_stats")]
         ]
     )
 
-    await message.answer(
-        f"⚡ <b>Админ-панель</b>\n\n"
-        f"👥 Пользователей: {users_count}\n"
-        f"📦 Товаров: {products_count}\n"
-        f"📂 Категорий: {categories_count}\n"
-        f"🛒 Заказов: {orders_count}\n\n"
-        f"Выберите действие:",
-        reply_markup=keyboard
-    )
+    await message.answer(text, reply_markup=kb)
 
 
 @router.callback_query(F.data == "admin_add_product")
 async def admin_add_product_start(callback: CallbackQuery, state: FSMContext) -> None:
     """Начало добавления товара"""
-    if callback.from_user.id not in settings.ADMIN_IDS:
-        await callback.answer("⛔️ Доступ запрещен", show_alert=True)
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔️ Нет доступа", show_alert=True)
         return
 
-    await callback.message.edit_text("📝 Введите название товара:")
-    await state.set_state(ProductForm.title)
+    categories = await get_categories()
+    if not categories:
+        await callback.message.answer("❌ Сначала добавьте категории в базу данных.")
+        await callback.answer()
+        return
+
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text=cat[1], callback_data=f"admin_cat_{cat[0]}")]
+            for cat in categories
+        ] + [[InlineKeyboardButton(text="⬅️ Отмена", callback_data="admin_cancel")]]
+    )
+
+    await callback.message.answer("📂 Выберите категорию для товара:", reply_markup=kb)
     await callback.answer()
 
 
-@router.message(ProductForm.title)
-async def admin_add_product_title(message: Message, state: FSMContext) -> None:
-    """Получение названия товара"""
+@router.callback_query(F.data.startswith("admin_cat_"))
+async def admin_select_category(callback: CallbackQuery, state: FSMContext) -> None:
+    """Выбор категории для нового товара"""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔️ Нет доступа", show_alert=True)
+        return
+
+    category_id = int(callback.data.split("_")[2])
+    await state.set_state(AddProductForm.category_id)
+    await state.update_data(category_id=category_id)
+
+    await callback.message.answer("✏️ Введите название товара:")
+    await callback.answer()
+
+
+@router.message(AddProductForm.category_id)
+async def admin_product_title(message: Message, state: FSMContext) -> None:
+    """Ввод названия товара"""
+    if not is_admin(message.from_user.id):
+        await state.clear()
+        await message.answer("⛔️ Нет доступа")
+        return
+
     await state.update_data(title=message.text)
+    await state.set_state(AddProductForm.title)
     await message.answer("📝 Введите описание товара:")
-    await state.set_state(ProductForm.desc)
 
 
-@router.message(ProductForm.desc)
-async def admin_add_product_desc(message: Message, state: FSMContext) -> None:
-    """Получение описания товара"""
+@router.message(AddProductForm.title)
+async def admin_product_desc(message: Message, state: FSMContext) -> None:
+    """Ввод описания товара"""
+    if not is_admin(message.from_user.id):
+        await state.clear()
+        await message.answer("⛔️ Нет доступа")
+        return
+
     await state.update_data(desc=message.text)
+    await state.set_state(AddProductForm.desc)
     await message.answer("💰 Введите цену товара (число):")
-    await state.set_state(ProductForm.price)
 
 
-@router.message(ProductForm.price)
-async def admin_add_product_price(message: Message, state: FSMContext) -> None:
-    """Получение цены товара"""
+@router.message(AddProductForm.desc)
+async def admin_product_price(message: Message, state: FSMContext) -> None:
+    """Ввод цены товара"""
+    if not is_admin(message.from_user.id):
+        await state.clear()
+        await message.answer("⛔️ Нет доступа")
+        return
+
     try:
-        price = float(message.text)
+        price = float(message.text.replace(",", "."))
         if price <= 0:
             raise ValueError
     except ValueError:
@@ -104,126 +150,199 @@ async def admin_add_product_price(message: Message, state: FSMContext) -> None:
         return
 
     await state.update_data(price=price)
+    await state.set_state(AddProductForm.price)
+    await message.answer("🔗 Введите ссылку на файл (или отправьте '-' если нет):")
 
-    conn = await get_connection()
-    try:
-        cursor = await conn.execute("SELECT id, name FROM categories ORDER BY id")
-        categories = await cursor.fetchall()
-    finally:
-        await conn.close()
 
-    if not categories:
-        await message.answer("❌ Сначала создайте категорию в БД.")
+@router.message(AddProductForm.price)
+async def admin_product_file(message: Message, state: FSMContext) -> None:
+    """Ввод ссылки на файл"""
+    if not is_admin(message.from_user.id):
         await state.clear()
+        await message.answer("⛔️ Нет доступа")
         return
 
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text=cat["name"], callback_data=f"admin_cat_{cat['id']}")]
-            for cat in categories
-        ]
-    )
-    await message.answer("📂 Выберите категорию:", reply_markup=keyboard)
-    await state.set_state(ProductForm.category_id)
-
-
-@router.callback_query(ProductForm.category_id, F.data.startswith("admin_cat_"))
-async def admin_add_product_category(callback: CallbackQuery, state: FSMContext) -> None:
-    """Получение категории товара"""
-    category_id = int(callback.data.split("_")[2])
-    await state.update_data(category_id=category_id)
-    await callback.message.edit_text("📎 Отправьте файл товара (или отправьте '-' если файла нет):")
-    await state.set_state(ProductForm.file_data)
-    await callback.answer()
-
-
-@router.message(ProductForm.file_data)
-async def admin_add_product_file(message: Message, state: FSMContext) -> None:
-    """Получение файла товара"""
-    file_data = None
-    if message.document:
-        file_data = message.document.file_id
-    elif message.text == "-":
-        file_data = None
-    else:
-        await message.answer("❌ Отправьте файл или '-' для пропуска:")
-        return
-
+    file_data = message.text if message.text != "-" else None
     await state.update_data(file_data=file_data)
-    data = await state.get_data()
 
-    conn = await get_connection()
-    try:
-        await conn.execute(
-            """INSERT INTO products (category_id, title, desc, price, file_data)
-               VALUES (?, ?, ?, ?, ?)""",
-            (data["category_id"], data["title"], data["desc"], data["price"], data["file_data"])
-        )
-        await conn.commit()
-    finally:
-        await conn.close()
+    data = await state.get_data()
+    category_id = data.get("category_id")
+    title = data.get("title")
+    desc = data.get("desc")
+    price = data.get("price")
+
+    await add_product(
+        category_id=category_id,
+        title=title,
+        desc=desc,
+        price=price,
+        file_data=file_data
+    )
 
     await state.clear()
-    await message.answer("✅ Товар успешно добавлен!")
+    await message.answer(
+        f"✅ Товар <b>{title}</b> успешно добавлен!\n"
+        f"💰 Цена: {price} ₽",
+        reply_markup=main_menu_kb(message.from_user.id)
+    )
 
-    keyboard = await get_main_menu(message.from_user.id)
-    await message.answer("Возвращаемся в меню:", reply_markup=keyboard)
 
-
-@router.callback_query(F.data == "admin_list_products")
-async def admin_list_products(callback: CallbackQuery) -> None:
-    """Список всех товаров"""
-    if callback.from_user.id not in settings.ADMIN_IDS:
-        await callback.answer("⛔️ Доступ запрещен", show_alert=True)
+@router.callback_query(F.data == "admin_delete_product")
+async def admin_delete_product_start(callback: CallbackQuery) -> None:
+    """Начало удаления товара"""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔️ Нет доступа", show_alert=True)
         return
 
-    conn = await get_connection()
-    try:
-        cursor = await conn.execute(
-            """SELECT p.id, p.title, p.price, c.name as category
-               FROM products p
-               JOIN categories c ON p.category_id = c.id
-               ORDER BY p.id"""
-        )
-        products = await cursor.fetchall()
-    finally:
-        await conn.close()
-
-    if not products:
-        await callback.message.edit_text("📭 Товаров пока нет.")
+    categories = await get_categories()
+    if not categories:
+        await callback.message.answer("❌ Нет категорий в базе.")
         await callback.answer()
         return
 
-    text = "📦 <b>Все товары:</b>\n\n"
-    for product in products:
-        text += f"#{product['id']} — {product['title']} ({product['category']}) — {product['price']}₽\n"
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text=cat[1], callback_data=f"admin_del_cat_{cat[0]}")]
+            for cat in categories
+        ] + [[InlineKeyboardButton(text="⬅️ Отмена", callback_data="admin_cancel")]]
+    )
 
-    await callback.message.edit_text(text)
+    await callback.message.answer("📂 Выберите категорию для удаления товара:", reply_markup=kb)
     await callback.answer()
 
 
-@router.callback_query(F.data == "admin_list_categories")
-async def admin_list_categories(callback: CallbackQuery) -> None:
-    """Список всех категорий"""
-    if callback.from_user.id not in settings.ADMIN_IDS:
-        await callback.answer("⛔️ Доступ запрещен", show_alert=True)
+@router.callback_query(F.data.startswith("admin_del_cat_"))
+async def admin_delete_category_products(callback: CallbackQuery) -> None:
+    """Выбор товара для удаления"""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔️ Нет доступа", show_alert=True)
         return
 
-    conn = await get_connection()
-    try:
-        cursor = await conn.execute("SELECT id, name FROM categories ORDER BY id")
-        categories = await cursor.fetchall()
-    finally:
-        await conn.close()
+    category_id = int(callback.data.split("_")[3])
+    products = await get_products_by_category(category_id)
 
-    if not categories:
-        await callback.message.edit_text("📭 Категорий пока нет.")
+    if not products:
+        await callback.message.answer("📭 В этой категории нет товаров.")
         await callback.answer()
         return
 
-    text = "📂 <b>Все категории:</b>\n\n"
-    for category in categories:
-        text += f"#{category['id']} — {category['name']}\n"
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text=f"{p[2]} — {p[4]} ₽", callback_data=f"admin_del_prod_{p[0]}")]
+            for p in products
+        ] + [[InlineKeyboardButton(text="⬅️ Отмена", callback_data="admin_cancel")]]
+    )
 
-    await callback.message.edit_text(text)
+    await callback.message.answer("📦 Выберите товар для удаления:", reply_markup=kb)
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_del_prod_"))
+async def admin_delete_product_confirm(callback: CallbackQuery) -> None:
+    """Подтверждение удаления товара"""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔️ Нет доступа", show_alert=True)
+        return
+
+    product_id = int(callback.data.split("_")[3])
+    product = await get_product(product_id)
+
+    if not product:
+        await callback.message.answer("❌ Товар не найден.")
+        await callback.answer()
+        return
+
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="✅ Да, удалить", callback_data=f"admin_confirm_del_{product_id}"),
+                InlineKeyboardButton(text="❌ Нет", callback_data="admin_cancel")
+            ]
+        ]
+    )
+
+    await callback.message.answer(
+        f"⚠️ Вы уверены, что хотите удалить товар <b>{product[2]}</b>?",
+        reply_markup=kb
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_confirm_del_"))
+async def admin_delete_product_final(callback: CallbackQuery) -> None:
+    """Финальное удаление товара"""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔️ Нет доступа", show_alert=True)
+        return
+
+    product_id = int(callback.data.split("_")[3])
+    product = await get_product(product_id)
+
+    if not product:
+        await callback.message.answer("❌ Товар не найден.")
+        await callback.answer()
+        return
+
+    await delete_product(product_id)
+    await callback.message.answer(f"✅ Товар <b>{product[2]}</b> удален.")
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_orders")
+async def admin_orders(callback: CallbackQuery) -> None:
+    """Просмотр всех заказов"""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔️ Нет доступа", show_alert=True)
+        return
+
+    orders = await get_all_orders()
+
+    if not orders:
+        await callback.message.answer("📭 Заказов пока нет.")
+        await callback.answer()
+        return
+
+    text = "📋 <b>Все заказы:</b>\n\n"
+    for order in orders:
+        # order: (id, user_id, product_id, count, created_at, title, price)
+        order_id, user_id, product_id, count, created_at, title, price = order
+        text += (
+            f"🆔 Заказ #{order_id}\n"
+            f"👤 Пользователь: {user_id}\n"
+            f"📦 Товар: {title}\n"
+            f"🔢 Кол-во: {count}\n"
+            f"💰 Сумма: {price * count} ₽\n"
+            f"🕐 Дата: {created_at}\n"
+            f"─────────────\n"
+        )
+
+    await callback.message.answer(text)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_stats")
+async def admin_stats(callback: CallbackQuery) -> None:
+    """Просмотр статистики"""
+    if not is_admin(callback.from_user.id):
+        await callback.answer("⛔️ Нет доступа", show_alert=True)
+        return
+
+    users_count = await get_all_users_count()
+    orders_count = await get_all_orders_count()
+
+    text = (
+        f"📊 <b>Статистика бота:</b>\n\n"
+        f"👥 Всего пользователей: <b>{users_count}</b>\n"
+        f"📦 Всего заказов: <b>{orders_count}</b>\n"
+    )
+
+    await callback.message.answer(text)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_cancel")
+async def admin_cancel(callback: CallbackQuery, state: FSMContext) -> None:
+    """Отмена действия"""
+    await state.clear()
+    await callback.message.answer("❌ Действие отменено.")
     await callback.answer()
