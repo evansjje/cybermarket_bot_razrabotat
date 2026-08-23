@@ -1,291 +1,396 @@
 # handlers/payment.py
 import asyncio
 import logging
-from typing import Optional
-
 from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton, LabeledPrice, PreCheckoutQuery
-from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
+from aiogram.types import Message, CallbackQuery, LabeledPrice, PreCheckoutQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.filters import Command
 from aiogram.exceptions import TelegramBadRequest
-
-from config import settings
 from database import Database
-from keyboards import main_menu_keyboard, product_detail_keyboard
+from keyboards import main_menu_kb
+from config import settings
 
 router = Router()
 db = Database()
+logger = logging.getLogger(__name__)
 
-# YooKassa
-try:
-    from yookassa import Configuration, Payment as YooKassaPayment
-    Configuration.account_id = settings.YOOKASSA_SHOP_ID
-    Configuration.secret_key = settings.YOOKASSA_SECRET_KEY
-    YOOKASSA_ENABLED = True
-except ImportError:
-    YOOKASSA_ENABLED = False
-    logging.warning("YooKassa не установлен. Оплата через YooKassa отключена.")
+# Константы для YooKassa
+YOOKASSA_PROVIDER_TOKEN = settings.YOOKASSA_SECRET_KEY
+SHOP_ID = settings.YOOKASSA_SHOP_ID
 
 
-class PaymentStates(StatesGroup):
-    waiting_for_payment_method = State()
-
-
-async def create_yookassa_payment(amount: float, description: str, user_id: int) -> Optional[str]:
-    """Создать платёж через YooKassa и вернуть URL для оплаты"""
-    if not YOOKASSA_ENABLED:
-        return None
+@router.message(F.text == "🛒 Корзина")
+async def show_cart(message: Message):
+    """Показать содержимое корзины"""
+    user_id = message.from_user.id
+    cart_items = await db.get_cart(user_id)
     
-    try:
-        payment = YooKassaPayment.create({
-            "amount": {
-                "value": f"{amount:.2f}",
-                "currency": "RUB"
-            },
-            "confirmation": {
-                "type": "redirect",
-                "return_url": "https://t.me/YourBotUsername"
-            },
-            "capture": True,
-            "description": description,
-            "metadata": {
-                "user_id": str(user_id)
-            }
-        })
-        return payment.confirmation.confirmation_url
-    except Exception as e:
-        logging.error(f"YooKassa payment creation error: {e}")
-        return None
-
-
-async def check_yookassa_payment(payment_id: str) -> bool:
-    """Проверить статус платежа YooKassa"""
-    if not YOOKASSA_ENABLED:
-        return False
-    
-    try:
-        payment = YooKassaPayment.find_one(payment_id)
-        return payment.status == "succeeded"
-    except Exception as e:
-        logging.error(f"YooKassa payment check error: {e}")
-        return False
-
-
-@router.callback_query(F.data.startswith("buy:"))
-async def process_buy(callback: CallbackQuery, state: FSMContext):
-    """Начать процесс оплаты товара"""
-    product_id = int(callback.data.split(":", 1)[1])
-    product = await db.get_product(product_id)
-    
-    if not product:
-        await callback.answer("Товар не найден", show_alert=True)
+    if not cart_items:
+        await message.answer(
+            "🛒 Ваша корзина пуста.\n\n"
+            "Загляните в каталог, чтобы найти что-нибудь интересное!",
+            reply_markup=main_menu_kb()
+        )
         return
     
-    if not product.get("is_active", 1):
-        await callback.answer("Товар недоступен", show_alert=True)
-        return
+    total_price = sum(item[3] * item[4] for item in cart_items)  # price * quantity
+    cart_text = "🛒 Ваша корзина:\n\n"
     
-    # Сохраняем данные о покупке
-    await state.update_data(
-        product_id=product_id,
-        product_name=product["name"],
-        product_price=product["price"],
-        product_content=product.get("content"),
-        product_file_path=product.get("file_path")
-    )
+    for item in cart_items:
+        product_id, name, price, quantity = item[1], item[2], item[3], item[4]
+        cart_text += f"📦 {name}\n"
+        cart_text += f"💰 Цена: {price} ₽\n"
+        cart_text += f"📊 Количество: {quantity}\n"
+        cart_text += f"💵 Сумма: {price * quantity} ₽\n\n"
     
-    # Показываем выбор способа оплаты
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="💳 Оплатить картой (YooKassa)", callback_data="pay:yookassa")],
-        [InlineKeyboardButton(text="⚡️ Telegram Stars", callback_data="pay:telegram")],
-        [InlineKeyboardButton(text="🔙 Назад", callback_data=f"product:{product_id}")]
+    cart_text += f"━━━━━━━━━━━━━\n"
+    cart_text += f"💎 Итого: {total_price} ₽"
+    
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💳 Оплатить", callback_data="checkout")],
+        [InlineKeyboardButton(text="🗑 Очистить корзину", callback_data="clear_cart")],
+        [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
     ])
     
-    await callback.message.edit_text(
-        f"💳 Выберите способ оплаты для товара «{product['name']}»\n"
-        f"💰 Цена: {product['price']}₽",
-        reply_markup=keyboard
+    await message.answer(cart_text, reply_markup=kb)
+
+
+@router.callback_query(F.data == "clear_cart")
+async def clear_cart(callback: CallbackQuery):
+    """Очистить корзину"""
+    user_id = callback.from_user.id
+    await db.clear_cart(user_id)
+    
+    await callback.message.answer(
+        "🗑 Корзина очищена!",
+        reply_markup=main_menu_kb()
     )
     await callback.answer()
 
 
-@router.callback_query(F.data.startswith("pay:"))
-async def process_payment(callback: CallbackQuery, state: FSMContext):
-    """Обработка выбранного способа оплаты"""
-    payment_method = callback.data.split(":", 1)[1]
-    data = await state.get_data()
+@router.callback_query(F.data == "checkout")
+async def checkout(callback: CallbackQuery):
+    """Оформление заказа и оплата через Telegram Payments"""
+    user_id = callback.from_user.id
+    cart_items = await db.get_cart(user_id)
     
-    if not data:
-        await callback.answer("Сессия истекла. Попробуйте снова.", show_alert=True)
+    if not cart_items:
+        await callback.message.answer(
+            "❌ Ваша корзина пуста!",
+            reply_markup=main_menu_kb()
+        )
+        await callback.answer()
         return
     
-    product_id = data.get("product_id")
-    product_name = data.get("product_name")
-    product_price = data.get("product_price")
+    # Рассчитываем общую стоимость
+    total_amount = sum(item[3] * item[4] for item in cart_items)
     
-    if payment_method == "yookassa":
-        # YooKassa оплата
-        payment_url = await create_yookassa_payment(
-            amount=product_price,
-            description=f"Покупка: {product_name}",
-            user_id=callback.from_user.id
-        )
-        
-        if payment_url:
-            keyboard = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="💳 Перейти к оплате", url=payment_url)],
-                [InlineKeyboardButton(text="✅ Я оплатил", callback_data="confirm:yookassa")],
-                [InlineKeyboardButton(text="🔙 Отмена", callback_data="cancel_payment")]
-            ])
-            
-            await callback.message.edit_text(
-                f"💳 Оплата через YooKassa\n\n"
-                f"Товар: {product_name}\n"
-                f"Сумма: {product_price}₽\n\n"
-                f"Нажмите кнопку для перехода к оплате.",
-                reply_markup=keyboard
-            )
-        else:
-            await callback.message.edit_text(
-                "❌ Ошибка при создании платежа. Попробуйте позже.",
-                reply_markup=main_menu_keyboard()
-            )
+    # Создаем описание заказа
+    order_description = "Покупка цифровых товаров:\n"
+    for item in cart_items:
+        product_id, name, price, quantity = item[1], item[2], item[3], item[4]
+        order_description += f"• {name} x{quantity}\n"
     
-    elif payment_method == "telegram":
-        # Telegram Payments (Stars)
-        if not settings.BOT_TOKEN or settings.BOT_TOKEN == "YOUR_BOT_TOKEN_HERE":
-            await callback.message.edit_text(
-                "❌ Telegram Payments не настроены. Используйте YooKassa.",
-                reply_markup=main_menu_keyboard()
-            )
-            return
-        
-        # Отправляем инвойс
-        await callback.message.delete()
-        await callback.message.answer_invoice(
-            title=product_name,
-            description=f"Цифровой товар: {product_name}",
-            payload=f"product_{product_id}",
-            currency="XTR",  # Telegram Stars
-            prices=[LabeledPrice(label=product_name, amount=product_price)],
-            provider_token=""
-        )
+    # Отправляем счет на оплату через Telegram Payments
+    await callback.message.answer_invoice(
+        title="🛍 Покупка в CyberMarket",
+        description=order_description,
+        payload=f"order_{user_id}_{int(asyncio.get_event_loop().time())}",
+        provider_token=YOOKASSA_PROVIDER_TOKEN,
+        currency="RUB",
+        prices=[
+            LabeledPrice(label="Товары", amount=int(total_amount * 100))  # в копейках
+        ],
+        start_parameter="cybermarket_payment"
+    )
     
     await callback.answer()
 
 
 @router.pre_checkout_query()
-async def process_pre_checkout(pre_checkout_query: PreCheckoutQuery):
+async def pre_checkout_handler(pre_checkout_query: PreCheckoutQuery):
     """Подтверждение предварительной проверки платежа"""
-    await pre_checkout_query.answer(ok=True)
+    try:
+        # Проверяем, что пользователь существует в базе
+        user_id = pre_checkout_query.from_user.id
+        user = await db.get_user(user_id)
+        
+        if not user:
+            await pre_checkout_query.answer(
+                ok=False,
+                error_message="Пользователь не найден. Пожалуйста, начните с /start"
+            )
+            return
+        
+        # Проверяем, что корзина не пуста
+        cart_items = await db.get_cart(user_id)
+        if not cart_items:
+            await pre_checkout_query.answer(
+                ok=False,
+                error_message="Ваша корзина пуста. Пожалуйста, добавьте товары"
+            )
+            return
+        
+        # Проверяем сумму платежа
+        expected_amount = sum(item[3] * item[4] for item in cart_items) * 100
+        if pre_checkout_query.total_amount != expected_amount:
+            await pre_checkout_query.answer(
+                ok=False,
+                error_message="Сумма платежа не совпадает. Попробуйте еще раз"
+            )
+            return
+        
+        await pre_checkout_query.answer(ok=True)
+        
+    except Exception as e:
+        logger.error(f"Error in pre_checkout_handler: {e}")
+        await pre_checkout_query.answer(
+            ok=False,
+            error_message="Произошла ошибка при обработке платежа"
+        )
 
 
 @router.message(F.successful_payment)
-async def process_successful_payment(message: Message, state: FSMContext):
-    """Обработка успешного платежа через Telegram Payments"""
-    payment_info = message.successful_payment
-    product_id = int(payment_info.invoice_payload.split("_")[1])
+async def successful_payment(message: Message):
+    """Обработка успешного платежа"""
+    try:
+        user_id = message.from_user.id
+        payment_info = message.successful_payment
+        
+        # Получаем корзину пользователя
+        cart_items = await db.get_cart(user_id)
+        
+        if not cart_items:
+            await message.answer(
+                "❌ Ошибка: корзина пуста, но платеж прошел.\n"
+                "Пожалуйста, обратитесь в поддержку.",
+                reply_markup=main_menu_kb()
+            )
+            return
+        
+        # Создаем заказ в базе данных
+        order_id = await db.create_order(
+            user_id=user_id,
+            total_amount=payment_info.total_amount / 100,
+            payment_id=payment_info.telegram_payment_charge_id
+        )
+        
+        # Добавляем товары в заказ
+        for item in cart_items:
+            product_id, name, price, quantity = item[1], item[2], item[3], item[4]
+            await db.add_order_item(order_id, product_id, quantity, price)
+        
+        # Получаем все товары из корзины для выдачи
+        purchased_items = []
+        for item in cart_items:
+            product_id = item[1]
+            product = await db.get_product(product_id)
+            if product:
+                purchased_items.append(product)
+        
+        # Формируем сообщение с товарами
+        success_text = (
+            "✅ Оплата прошла успешно!\n\n"
+            "🎉 Спасибо за покупку!\n\n"
+            "📦 Ваши товары:\n\n"
+        )
+        
+        for product in purchased_items:
+            product_id, name, description, price, category, file_path, download_link, is_available = product
+            
+            success_text += f"━━━━━━━━━━━━━\n"
+            success_text += f"📦 {name}\n"
+            success_text += f"📝 {description}\n"
+            success_text += f"💰 {price} ₽\n\n"
+            
+            if download_link:
+                success_text += f"🔗 Ссылка для скачивания: {download_link}\n\n"
+            elif file_path:
+                success_text += f"📁 Файл: {file_path}\n\n"
+        
+        # Очищаем корзину после успешной покупки
+        await db.clear_cart(user_id)
+        
+        # Отправляем сообщение с товарами
+        await message.answer(
+            success_text,
+            reply_markup=main_menu_kb()
+        )
+        
+        # Отправляем файлы, если они есть
+        for product in purchased_items:
+            product_id, name, description, price, category, file_path, download_link, is_available = product
+            
+            if file_path and not download_link:
+                try:
+                    with open(file_path, 'rb') as file:
+                        await message.answer_document(
+                            document=file,
+                            caption=f"📦 {name}"
+                        )
+                except FileNotFoundError:
+                    logger.error(f"File not found: {file_path}")
+                    await message.answer(
+                        f"⚠️ Файл для товара «{name}» не найден.\n"
+                        f"Пожалуйста, обратитесь в поддержку."
+                    )
+                except Exception as e:
+                    logger.error(f"Error sending file: {e}")
+        
+        # Отправляем чек
+        await message.answer(
+            f"🧾 Чек об оплате:\n"
+            f"ID платежа: {payment_info.telegram_payment_charge_id}\n"
+            f"Сумма: {payment_info.total_amount / 100} ₽\n"
+            f"Валюта: {payment_info.currency}"
+        )
+        
+    except Exception as e:
+        logger.error(f"Error in successful_payment: {e}")
+        await message.answer(
+            "❌ Произошла ошибка при обработке платежа.\n"
+            "Пожалуйста, обратитесь в поддержку.",
+            reply_markup=main_menu_kb()
+        )
+
+
+@router.message(F.text == "💳 Оплатить")
+async def pay_button(message: Message):
+    """Обработка нажатия кнопки оплаты"""
+    user_id = message.from_user.id
+    cart_items = await db.get_cart(user_id)
     
-    product = await db.get_product(product_id)
-    if not product:
-        await message.answer("❌ Товар не найден")
+    if not cart_items:
+        await message.answer(
+            "❌ Ваша корзина пуста!",
+            reply_markup=main_menu_kb()
+        )
         return
     
-    # Создаём заказ в БД
-    order_id = await db.create_order(
-        user_id=message.from_user.id,
-        product_id=product_id,
-        amount=product["price"],
-        payment_method="telegram_stars"
+    total_amount = sum(item[3] * item[4] for item in cart_items)
+    
+    order_description = "Покупка цифровых товаров:\n"
+    for item in cart_items:
+        product_id, name, price, quantity = item[1], item[2], item[3], item[4]
+        order_description += f"• {name} x{quantity}\n"
+    
+    await message.answer_invoice(
+        title="🛍 Покупка в CyberMarket",
+        description=order_description,
+        payload=f"order_{user_id}_{int(asyncio.get_event_loop().time())}",
+        provider_token=YOOKASSA_PROVIDER_TOKEN,
+        currency="RUB",
+        prices=[
+            LabeledPrice(label="Товары", amount=int(total_amount * 100))
+        ],
+        start_parameter="cybermarket_payment"
     )
-    
-    # Выдаём товар
-    await deliver_product(message, product, order_id)
-    
-    # Очищаем состояние
-    await state.clear()
 
 
-@router.callback_query(F.data.startswith("confirm:"))
-async def confirm_payment(callback: CallbackQuery, state: FSMContext):
-    """Подтверждение оплаты через YooKassa"""
-    payment_method = callback.data.split(":", 1)[1]
-    data = await state.get_data()
+@router.callback_query(F.data.startswith("add_"))
+async def add_to_cart(callback: CallbackQuery):
+    """Добавление товара в корзину"""
+    try:
+        product_id = int(callback.data.replace("add_", ""))
+        user_id = callback.from_user.id
+        
+        # Проверяем, что товар существует
+        product = await db.get_product(product_id)
+        if not product:
+            await callback.message.answer(
+                "❌ Товар не найден или был удален.",
+                reply_markup=main_menu_kb()
+            )
+            await callback.answer()
+            return
+        
+        # Добавляем товар в корзину
+        await db.add_to_cart(user_id, product_id)
+        
+        await callback.message.answer(
+            f"✅ Товар «{product[1]}» добавлен в корзину!\n\n"
+            f"Продолжить покупки или перейти к оплате?",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🛒 Перейти в корзину", callback_data="view_cart")],
+                [InlineKeyboardButton(text="⬅️ Продолжить покупки", callback_data="back_to_products")],
+                [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
+            ])
+        )
+        await callback.answer()
+        
+    except Exception as e:
+        logger.error(f"Error in add_to_cart: {e}")
+        await callback.message.answer(
+            "❌ Произошла ошибка при добавлении товара в корзину.",
+            reply_markup=main_menu_kb()
+        )
+        await callback.answer()
+
+
+@router.callback_query(F.data == "view_cart")
+async def view_cart(callback: CallbackQuery):
+    """Просмотр корзины"""
+    user_id = callback.from_user.id
+    cart_items = await db.get_cart(user_id)
     
-    if not data:
-        await callback.answer("Сессия истекла", show_alert=True)
+    if not cart_items:
+        await callback.message.answer(
+            "🛒 Ваша корзина пуста.",
+            reply_markup=main_menu_kb()
+        )
+        await callback.answer()
         return
     
-    product_id = data.get("product_id")
-    product = await db.get_product(product_id)
+    total_price = sum(item[3] * item[4] for item in cart_items)
+    cart_text = "🛒 Ваша корзина:\n\n"
     
-    if not product:
-        await callback.answer("Товар не найден", show_alert=True)
-        return
+    for item in cart_items:
+        product_id, name, price, quantity = item[1], item[2], item[3], item[4]
+        cart_text += f"📦 {name}\n"
+        cart_text += f"💰 Цена: {price} ₽\n"
+        cart_text += f"📊 Количество: {quantity}\n"
+        cart_text += f"💵 Сумма: {price * quantity} ₽\n\n"
     
-    # Проверяем платеж (в реальном проекте нужно проверить через API YooKassa)
-    # Здесь упрощённая проверка - в реальном проекте нужно хранить payment_id и проверять его статус
+    cart_text += f"━━━━━━━━━━━━━\n"
+    cart_text += f"💎 Итого: {total_price} ₽"
     
-    # Создаём заказ
-    order_id = await db.create_order(
-        user_id=callback.from_user.id,
-        product_id=product_id,
-        amount=product["price"],
-        payment_method="yookassa"
-    )
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💳 Оплатить", callback_data="checkout")],
+        [InlineKeyboardButton(text="🗑 Очистить корзину", callback_data="clear_cart")],
+        [InlineKeyboardButton(text="🏠 Главное меню", callback_data="main_menu")]
+    ])
     
-    # Выдаём товар
-    await deliver_product(callback.message, product, order_id)
-    
-    # Очищаем состояние
-    await state.clear()
-    await callback.answer("✅ Оплата подтверждена")
-
-
-@router.callback_query(F.data == "cancel_payment")
-async def cancel_payment(callback: CallbackQuery, state: FSMContext):
-    """Отмена оплаты"""
-    await state.clear()
-    await callback.message.edit_text(
-        "❌ Оплата отменена.",
-        reply_markup=main_menu_keyboard()
-    )
+    await callback.message.answer(cart_text, reply_markup=kb)
     await callback.answer()
 
 
-async def deliver_product(message: Message, product: dict, order_id: int):
-    """Выдача цифрового товара после оплаты"""
-    # Отправляем подтверждение
-    await message.answer(
-        f"✅ Оплата прошла успешно!\n"
-        f"📦 Заказ #{order_id}\n"
-        f"🎁 Товар: {product['name']}\n\n"
-        f"Спасибо за покупку!"
+@router.message(F.text == "💳 Оплатить")
+async def pay_command(message: Message):
+    """Команда для оплаты"""
+    user_id = message.from_user.id
+    cart_items = await db.get_cart(user_id)
+    
+    if not cart_items:
+        await message.answer(
+            "❌ Ваша корзина пуста!",
+            reply_markup=main_menu_kb()
+        )
+        return
+    
+    total_amount = sum(item[3] * item[4] for item in cart_items)
+    
+    order_description = "Покупка цифровых товаров:\n"
+    for item in cart_items:
+        product_id, name, price, quantity = item[1], item[2], item[3], item[4]
+        order_description += f"• {name} x{quantity}\n"
+    
+    await message.answer_invoice(
+        title="🛍 Покупка в CyberMarket",
+        description=order_description,
+        payload=f"order_{user_id}_{int(asyncio.get_event_loop().time())}",
+        provider_token=YOOKASSA_PROVIDER_TOKEN,
+        currency="RUB",
+        prices=[
+            LabeledPrice(label="Товары", amount=int(total_amount * 100))
+        ],
+        start_parameter="cybermarket_payment"
     )
-    
-    # Выдаём файл, если есть
-    if product.get("file_path"):
-        try:
-            with open(product["file_path"], "rb") as file:
-                await message.answer_document(
-                    document=file,
-                    caption=f"📦 Ваш товар: {product['name']}"
-                )
-        except FileNotFoundError:
-            await message.answer("❌ Файл товара не найден. Обратитесь в поддержку.")
-        except Exception as e:
-            logging.error(f"Error sending file: {e}")
-            await message.answer("❌ Ошибка при отправке файла. Обратитесь в поддержку.")
-    
-    # Выдаём контент (текст/ссылку)
-    if product.get("content"):
-        await message.answer(
-            f"🔗 Ваш доступ к товару:\n\n{product['content']}"
-        )
-    
-    # Если нет ни файла, ни контента
-    if not product.get("file_path") and not product.get("content"):
-        await message.answer(
-            "ℹ️ Товар будет доставлен в течение 5 минут.\n"
-            "Если этого не произошло - обратитесь в поддержку."
-        )

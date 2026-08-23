@@ -1,4 +1,6 @@
-from typing import Union, List, Optional
+# config.py
+import os
+from typing import Union, List
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -15,14 +17,12 @@ class Settings(BaseSettings):
     @classmethod
     def parse_admin_ids(cls, v):
         if isinstance(v, str):
-            if not v.strip():
+            if v.strip() == '':
                 return []
             return [int(x.strip()) for x in v.split(',') if x.strip().isdigit()]
         if isinstance(v, int):
             return [v]
-        if isinstance(v, list):
-            return [int(x) for x in v if isinstance(x, (int, str)) and str(x).isdigit()]
-        return []
+        return v
 
     @property
     def admin_ids_list(self) -> List[int]:

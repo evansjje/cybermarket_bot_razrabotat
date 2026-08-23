@@ -15,15 +15,17 @@ COPY keyboards.py .
 COPY main.py .
 COPY handlers/ ./handlers/
 
-# Установка Python зависимостей
+# Установка Python-зависимостей
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Создание директории для данных
+# Создание директории для базы данных
 RUN mkdir -p /app/data
 
-# Переменные окружения
-ENV PYTHONUNBUFFERED=1
-ENV PYTHONDONTWRITEBYTECODE=1
+# Переменные окружения (переопределяются при запуске)
+ENV BOT_TOKEN="YOUR_BOT_TOKEN_HERE"
+ENV YOOKASSA_SHOP_ID="YOUR_SHOP_ID"
+ENV YOOKASSA_SECRET_KEY="YOUR_SECRET_KEY"
+ENV ADMIN_IDS=""
 
 # Запуск бота
 CMD ["python", "main.py"]
