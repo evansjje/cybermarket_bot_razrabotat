@@ -1,530 +1,537 @@
 import logging
-from typing import Optional, Union
+from typing import List, Optional, Dict, Any
 
-from aiogram import Router, F, Bot
-from aiogram.filters import Command, StateFilter
+from aiogram import Router, F
+from aiogram.types import CallbackQuery, Message, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import (
-    CallbackQuery,
-    InlineKeyboardMarkup,
-    InlineKeyboardButton,
-    Message,
-    ReplyKeyboardMarkup,
-    KeyboardButton,
-    ReplyKeyboardRemove,
-)
+from aiogram.filters import Command, StateFilter
 
 from config import settings
-from database import Database
+from database import db
+from keyboards import (
+    get_main_menu,
+    get_admin_panel_keyboard,
+    get_admin_products_keyboard,
+    get_admin_product_actions_keyboard,
+    get_admin_confirm_keyboard,
+    get_admin_categories_keyboard
+)
 
-# Настройка логирования
+router = Router()
 logger = logging.getLogger(__name__)
 
-# Роутер для админ-панели
-router = Router(name="admin")
 
-# Проверка на админа (фильтр)
-def is_admin(user_id: int) -> bool:
-    """Проверка, является ли пользователь администратором."""
-    return user_id in settings.ADMIN_IDS
-
-
-# ==================== FSM Состояния ====================
 class AdminStates(StatesGroup):
     """Состояния для админ-панели."""
-    waiting_for_product_name = State()
-    waiting_for_product_description = State()
-    waiting_for_product_price = State()
-    waiting_for_product_category = State()
-    waiting_for_product_file_id = State()
-    waiting_for_product_link = State()
-    waiting_for_edit_product_id = State()
-    waiting_for_edit_field = State()
-    waiting_for_edit_value = State()
-    waiting_for_delete_product_id = State()
+    admin_menu = State()
+    adding_product_name = State()
+    adding_product_description = State()
+    adding_product_price = State()
+    adding_product_category = State()
+    adding_product_file_id = State()
+    adding_product_file_path = State()
+    editing_product_name = State()
+    editing_product_description = State()
+    editing_product_price = State()
+    editing_product_category = State()
+    editing_product_file_id = State()
+    editing_product_file_path = State()
+    deleting_product_confirm = State()
 
 
-# ==================== Вспомогательные функции ====================
-async def get_admin_main_keyboard() -> ReplyKeyboardMarkup:
-    """Клавиатура главного меню админа."""
-    keyboard = ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="➕ Добавить товар")],
-            [KeyboardButton(text="📝 Редактировать товар")],
-            [KeyboardButton(text="🗑 Удалить товар")],
-            [KeyboardButton(text="📦 Список товаров")],
-            [KeyboardButton(text="👥 Пользователи")],
-            [KeyboardButton(text="📊 Статистика")],
-            [KeyboardButton(text="🔙 Назад в меню")],
-        ],
-        resize_keyboard=True,
-        input_field_placeholder="Выберите действие..."
-    )
-    return keyboard
+def is_admin(user_id: int) -> bool:
+    """Проверяет, является ли пользователь администратором."""
+    return user_id in settings.admin_ids_list
 
 
-def get_admin_cancel_keyboard() -> InlineKeyboardMarkup:
-    """Инлайн-клавиатура для отмены действия."""
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="❌ Отмена", callback_data="admin_cancel")]
-        ]
-    )
-
-
-def get_product_edit_keyboard(product_id: int) -> InlineKeyboardMarkup:
-    """Клавиатура для выбора поля для редактирования."""
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="📝 Название", callback_data=f"edit_field:{product_id}:name")],
-            [InlineKeyboardButton(text="📝 Описание", callback_data=f"edit_field:{product_id}:description")],
-            [InlineKeyboardButton(text="💰 Цена", callback_data=f"edit_field:{product_id}:price")],
-            [InlineKeyboardButton(text="📂 Категория", callback_data=f"edit_field:{product_id}:category")],
-            [InlineKeyboardButton(text="📎 Файл", callback_data=f"edit_field:{product_id}:file_id")],
-            [InlineKeyboardButton(text="🔗 Ссылка", callback_data=f"edit_field:{product_id}:link")],
-            [InlineKeyboardButton(text="❌ Отмена", callback_data="admin_cancel")],
-        ]
-    )
-
-
-async def format_product_info(product: dict) -> str:
-    """Форматирование информации о товаре для отображения."""
-    return (
-        f"📦 <b>ID:</b> {product['id']}\n"
-        f"📝 <b>Название:</b> {product['name']}\n"
-        f"📄 <b>Описание:</b> {product['description']}\n"
-        f"💰 <b>Цена:</b> {product['price']} руб.\n"
-        f"📂 <b>Категория:</b> {product['category']}\n"
-        f"📎 <b>Файл:</b> {'✅ Есть' if product['file_id'] else '❌ Нет'}\n"
-        f"🔗 <b>Ссылка:</b> {'✅ Есть' if product['link'] else '❌ Нет'}"
-    )
-
-
-# ==================== Обработчики команд ====================
 @router.message(Command("admin"))
-async def admin_command(message: Message):
-    """Вход в админ-панель по команде /admin."""
+async def admin_command(message: Message, state: FSMContext):
+    """Команда /admin для входа в админ-панель."""
     if not is_admin(message.from_user.id):
         await message.answer("⛔️ У вас нет доступа к админ-панели.")
         return
-
+    
+    await state.clear()
+    await state.set_state(AdminStates.admin_menu)
     await message.answer(
-        "👋 Добро пожаловать в админ-панель!\n"
+        "👨‍💻 Админ-панель\n\n"
         "Выберите действие:",
-        reply_markup=await get_admin_main_keyboard()
+        reply_markup=get_admin_panel_keyboard()
     )
 
 
-@router.message(F.text == "🔙 Назад в меню")
-async def back_to_main_menu(message: Message):
-    """Возврат в главное меню."""
+@router.message(F.text == "👨‍💻 Админ-панель")
+async def admin_panel_button(message: Message, state: FSMContext):
+    """Кнопка админ-панели в главном меню."""
     if not is_admin(message.from_user.id):
+        await message.answer("⛔️ У вас нет доступа к админ-панели.")
         return
-
-    from keyboards import get_main_keyboard
+    
+    await state.clear()
+    await state.set_state(AdminStates.admin_menu)
     await message.answer(
-        "Вы вернулись в главное меню.",
-        reply_markup=get_main_keyboard()
+        "👨‍💻 Админ-панель\n\n"
+        "Выберите действие:",
+        reply_markup=get_admin_panel_keyboard()
     )
 
 
-@router.message(F.text == "➕ Добавить товар")
-async def add_product_start(message: Message, state: FSMContext):
+@router.callback_query(F.data == "admin_panel", StateFilter(AdminStates.admin_menu))
+async def admin_panel_callback(callback: CallbackQuery, state: FSMContext):
+    """Возврат в админ-панель."""
+    await callback.message.edit_text(
+        "👨‍💻 Админ-панель\n\n"
+        "Выберите действие:",
+        reply_markup=get_admin_panel_keyboard()
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_add_product", StateFilter(AdminStates.admin_menu))
+async def admin_add_product_start(callback: CallbackQuery, state: FSMContext):
     """Начало добавления товара."""
-    if not is_admin(message.from_user.id):
-        return
-
-    await state.set_state(AdminStates.waiting_for_product_name)
-    await message.answer(
-        "📝 Введите название товара:",
-        reply_markup=get_admin_cancel_keyboard()
+    await state.set_state(AdminStates.adding_product_name)
+    await callback.message.edit_text(
+        "➕ Добавление нового товара\n\n"
+        "Введите название товара:"
     )
+    await callback.answer()
 
 
-@router.message(StateFilter(AdminStates.waiting_for_product_name))
-async def add_product_name(message: Message, state: FSMContext):
+@router.message(StateFilter(AdminStates.adding_product_name))
+async def admin_add_product_name(message: Message, state: FSMContext):
     """Получение названия товара."""
-    if message.text == "❌ Отмена":
-        await state.clear()
-        await message.answer("❌ Добавление отменено.", reply_markup=await get_admin_main_keyboard())
+    if not message.text or len(message.text) > 100:
+        await message.answer("❌ Название товара должно быть не длиннее 100 символов. Попробуйте еще раз:")
         return
-
-    await state.update_data(name=message.text)
-    await state.set_state(AdminStates.waiting_for_product_description)
-    await message.answer(
-        "📄 Введите описание товара:",
-        reply_markup=get_admin_cancel_keyboard()
-    )
+    
+    await state.update_data(product_name=message.text)
+    await state.set_state(AdminStates.adding_product_description)
+    await message.answer("Введите описание товара:")
 
 
-@router.message(StateFilter(AdminStates.waiting_for_product_description))
-async def add_product_description(message: Message, state: FSMContext):
+@router.message(StateFilter(AdminStates.adding_product_description))
+async def admin_add_product_description(message: Message, state: FSMContext):
     """Получение описания товара."""
-    if message.text == "❌ Отмена":
-        await state.clear()
-        await message.answer("❌ Добавление отменено.", reply_markup=await get_admin_main_keyboard())
+    if not message.text or len(message.text) > 1000:
+        await message.answer("❌ Описание товара должно быть не длиннее 1000 символов. Попробуйте еще раз:")
         return
-
-    await state.update_data(description=message.text)
-    await state.set_state(AdminStates.waiting_for_product_price)
-    await message.answer(
-        "💰 Введите цену товара (в рублях):",
-        reply_markup=get_admin_cancel_keyboard()
-    )
+    
+    await state.update_data(product_description=message.text)
+    await state.set_state(AdminStates.adding_product_price)
+    await message.answer("Введите цену товара (в рублях, число):")
 
 
-@router.message(StateFilter(AdminStates.waiting_for_product_price))
-async def add_product_price(message: Message, state: FSMContext):
+@router.message(StateFilter(AdminStates.adding_product_price))
+async def admin_add_product_price(message: Message, state: FSMContext):
     """Получение цены товара."""
-    if message.text == "❌ Отмена":
-        await state.clear()
-        await message.answer("❌ Добавление отменено.", reply_markup=await get_admin_main_keyboard())
-        return
-
     try:
         price = float(message.text)
         if price <= 0:
             raise ValueError
     except ValueError:
-        await message.answer("⚠️ Введите корректную цену (положительное число).")
+        await message.answer("❌ Цена должна быть положительным числом. Попробуйте еще раз:")
         return
-
-    await state.update_data(price=price)
-    await state.set_state(AdminStates.waiting_for_product_category)
+    
+    await state.update_data(product_price=price)
+    
+    # Получаем список категорий для выбора
+    categories = await db.get_categories()
+    if not categories:
+        # Если категорий нет, создаем категорию "Общее"
+        await db.add_category("Общее")
+        categories = ["Общее"]
+    
+    await state.set_state(AdminStates.adding_product_category)
     await message.answer(
-        "📂 Введите категорию товара (например: скрипты, софт, мануалы):",
-        reply_markup=get_admin_cancel_keyboard()
+        "Выберите категорию товара:",
+        reply_markup=get_admin_categories_keyboard(categories)
     )
 
 
-@router.message(StateFilter(AdminStates.waiting_for_product_category))
-async def add_product_category(message: Message, state: FSMContext):
-    """Получение категории товара."""
-    if message.text == "❌ Отмена":
-        await state.clear()
-        await message.answer("❌ Добавление отменено.", reply_markup=await get_admin_main_keyboard())
-        return
-
-    await state.update_data(category=message.text)
-    await state.set_state(AdminStates.waiting_for_product_file_id)
-    await message.answer(
-        "📎 Отправьте файл товара (или введите 'пропустить'):",
-        reply_markup=get_admin_cancel_keyboard()
+@router.callback_query(F.data.startswith("admin_category:"), StateFilter(AdminStates.adding_product_category))
+async def admin_add_product_category(callback: CallbackQuery, state: FSMContext):
+    """Выбор категории товара."""
+    category = callback.data.split(":", 1)[1]
+    await state.update_data(product_category=category)
+    await state.set_state(AdminStates.adding_product_file_id)
+    await callback.message.edit_text(
+        "📎 Отправьте файл товара (или введите file_id):\n\n"
+        "Можно отправить файл напрямую или ввести его file_id."
     )
+    await callback.answer()
 
 
-@router.message(StateFilter(AdminStates.waiting_for_product_file_id))
-async def add_product_file(message: Message, state: FSMContext, bot: Bot):
+@router.message(StateFilter(AdminStates.adding_product_file_id))
+async def admin_add_product_file(message: Message, state: FSMContext):
     """Получение файла товара."""
-    if message.text == "❌ Отмена":
-        await state.clear()
-        await message.answer("❌ Добавление отменено.", reply_markup=await get_admin_main_keyboard())
-        return
-
     file_id = None
+    file_path = None
+    
     if message.document:
         file_id = message.document.file_id
-    elif message.text and message.text.lower() == "пропустить":
-        pass
+        file_path = f"{settings.PRODUCTS_DIR}/{message.document.file_name}"
+    elif message.text:
+        file_id = message.text.strip()
+        file_path = f"{settings.PRODUCTS_DIR}/product_{file_id[:10]}.dat"
     else:
-        await message.answer("⚠️ Отправьте файл или введите 'пропустить'.")
+        await message.answer("❌ Пожалуйста, отправьте файл или введите file_id:")
         return
-
-    await state.update_data(file_id=file_id)
-    await state.set_state(AdminStates.waiting_for_product_link)
-    await message.answer(
-        "🔗 Введите ссылку на товар (или введите 'пропустить'):",
-        reply_markup=get_admin_cancel_keyboard()
-    )
-
-
-@router.message(StateFilter(AdminStates.waiting_for_product_link))
-async def add_product_link(message: Message, state: FSMContext, db: Database):
-    """Получение ссылки и сохранение товара."""
-    if message.text == "❌ Отмена":
-        await state.clear()
-        await message.answer("❌ Добавление отменено.", reply_markup=await get_admin_main_keyboard())
-        return
-
-    link = None
-    if message.text and message.text.lower() != "пропустить":
-        link = message.text
-
+    
+    await state.update_data(product_file_id=file_id, product_file_path=file_path)
+    
+    # Сохраняем товар в базу данных
     data = await state.get_data()
-    product_data = {
-        "name": data.get("name"),
-        "description": data.get("description"),
-        "price": data.get("price"),
-        "category": data.get("category"),
-        "file_id": data.get("file_id"),
-        "link": link,
-    }
-
     try:
-        product_id = await db.add_product(product_data)
+        product_id = await db.add_product(
+            name=data["product_name"],
+            description=data["product_description"],
+            price=data["product_price"],
+            category=data["product_category"],
+            file_id=file_id,
+            file_path=file_path
+        )
+        
         await state.clear()
+        await state.set_state(AdminStates.admin_menu)
         await message.answer(
-            f"✅ Товар успешно добавлен!\n"
-            f"ID товара: {product_id}\n"
-            f"Название: {product_data['name']}\n"
-            f"Цена: {product_data['price']} руб.",
-            reply_markup=await get_admin_main_keyboard()
+            f"✅ Товар успешно добавлен!\n\n"
+            f"📦 Название: {data['product_name']}\n"
+            f"💰 Цена: {data['product_price']}₽\n"
+            f"📂 Категория: {data['product_category']}\n"
+            f"🆔 ID товара: {product_id}",
+            reply_markup=get_admin_panel_keyboard()
         )
     except Exception as e:
-        logger.error(f"Ошибка при добавлении товара: {e}")
+        logger.error(f"Ошибка добавления товара: {e}")
+        await message.answer("❌ Произошла ошибка при добавлении товара. Попробуйте еще раз.")
+        await state.clear()
+        await state.set_state(AdminStates.admin_menu)
         await message.answer(
-            "❌ Произошла ошибка при добавлении товара. Попробуйте еще раз.",
-            reply_markup=await get_admin_main_keyboard()
+            "👨‍💻 Админ-панель",
+            reply_markup=get_admin_panel_keyboard()
         )
 
 
-@router.message(F.text == "📝 Редактировать товар")
-async def edit_product_start(message: Message, state: FSMContext):
-    """Начало редактирования товара."""
-    if not is_admin(message.from_user.id):
-        return
-
-    await state.set_state(AdminStates.waiting_for_edit_product_id)
-    await message.answer(
-        "📝 Введите ID товара для редактирования:",
-        reply_markup=get_admin_cancel_keyboard()
-    )
-
-
-@router.message(StateFilter(AdminStates.waiting_for_edit_product_id))
-async def edit_product_get_id(message: Message, state: FSMContext, db: Database):
-    """Получение ID товара для редактирования."""
-    if message.text == "❌ Отмена":
-        await state.clear()
-        await message.answer("❌ Редактирование отменено.", reply_markup=await get_admin_main_keyboard())
-        return
-
-    try:
-        product_id = int(message.text)
-    except ValueError:
-        await message.answer("⚠️ Введите корректный ID товара (число).")
-        return
-
-    product = await db.get_product(product_id)
-    if not product:
-        await message.answer("❌ Товар с таким ID не найден.")
-        return
-
-    await state.update_data(product_id=product_id)
-    await state.set_state(AdminStates.waiting_for_edit_field)
-
-    await message.answer(
-        f"📦 Найден товар:\n\n{await format_product_info(product)}\n\n"
-        f"Выберите поле для редактирования:",
-        reply_markup=get_product_edit_keyboard(product_id)
-    )
-
-
-@router.callback_query(F.data.startswith("edit_field:"))
-async def edit_product_field(callback: CallbackQuery, state: FSMContext):
-    """Выбор поля для редактирования."""
-    if not is_admin(callback.from_user.id):
-        await callback.answer("⛔️ Нет доступа", show_alert=True)
-        return
-
-    _, product_id, field = callback.data.split(":")
-    await state.update_data(edit_field=field)
-    await state.set_state(AdminStates.waiting_for_edit_value)
-
-    field_names = {
-        "name": "название",
-        "description": "описание",
-        "price": "цену",
-        "category": "категорию",
-        "file_id": "файл",
-        "link": "ссылку",
-    }
-
-    await callback.message.edit_text(
-        f"📝 Введите новое значение для поля '{field_names.get(field, field)}':",
-        reply_markup=get_admin_cancel_keyboard()
-    )
-    await callback.answer()
-
-
-@router.message(StateFilter(AdminStates.waiting_for_edit_value))
-async def edit_product_value(message: Message, state: FSMContext, db: Database):
-    """Получение нового значения и обновление товара."""
-    if message.text == "❌ Отмена":
-        await state.clear()
-        await message.answer("❌ Редактирование отменено.", reply_markup=await get_admin_main_keyboard())
-        return
-
-    data = await state.get_data()
-    product_id = data.get("product_id")
-    field = data.get("edit_field")
-
-    # Для цены проверяем корректность
-    if field == "price":
-        try:
-            value = float(message.text)
-            if value <= 0:
-                raise ValueError
-        except ValueError:
-            await message.answer("⚠️ Введите корректную цену (положительное число).")
-            return
-    else:
-        value = message.text
-
-    try:
-        await db.update_product(product_id, {field: value})
-        await state.clear()
-        await message.answer(
-            f"✅ Поле '{field}' успешно обновлено!",
-            reply_markup=await get_admin_main_keyboard()
-        )
-    except Exception as e:
-        logger.error(f"Ошибка при редактировании товара: {e}")
-        await message.answer(
-            "❌ Произошла ошибка при редактировании товара.",
-            reply_markup=await get_admin_main_keyboard()
-        )
-
-
-@router.message(F.text == "🗑 Удалить товар")
-async def delete_product_start(message: Message, state: FSMContext):
-    """Начало удаления товара."""
-    if not is_admin(message.from_user.id):
-        return
-
-    await state.set_state(AdminStates.waiting_for_delete_product_id)
-    await message.answer(
-        "🗑 Введите ID товара для удаления:",
-        reply_markup=get_admin_cancel_keyboard()
-    )
-
-
-@router.message(StateFilter(AdminStates.waiting_for_delete_product_id))
-async def delete_product(message: Message, state: FSMContext, db: Database):
-    """Удаление товара."""
-    if message.text == "❌ Отмена":
-        await state.clear()
-        await message.answer("❌ Удаление отменено.", reply_markup=await get_admin_main_keyboard())
-        return
-
-    try:
-        product_id = int(message.text)
-    except ValueError:
-        await message.answer("⚠️ Введите корректный ID товара (число).")
-        return
-
-    product = await db.get_product(product_id)
-    if not product:
-        await message.answer("❌ Товар с таким ID не найден.")
-        return
-
-    await db.delete_product(product_id)
-    await state.clear()
-    await message.answer(
-        f"✅ Товар '{product['name']}' (ID: {product_id}) успешно удален!",
-        reply_markup=await get_admin_main_keyboard()
-    )
-
-
-@router.message(F.text == "📦 Список товаров")
-async def list_products(message: Message, db: Database):
-    """Просмотр всех товаров."""
-    if not is_admin(message.from_user.id):
-        return
-
+@router.callback_query(F.data == "admin_list_products", StateFilter(AdminStates.admin_menu))
+async def admin_list_products(callback: CallbackQuery, state: FSMContext):
+    """Просмотр списка товаров."""
     products = await db.get_all_products()
+    
     if not products:
-        await message.answer("📦 В базе пока нет товаров.")
-        return
-
-    text = "📦 <b>Список всех товаров:</b>\n\n"
-    for product in products:
-        text += await format_product_info(product) + "\n\n"
-
-    # Разбиваем на части, если сообщение слишком длинное
-    if len(text) > 4000:
-        for i in range(0, len(text), 4000):
-            await message.answer(text[i:i+4000])
-    else:
-        await message.answer(text)
-
-
-@router.message(F.text == "👥 Пользователи")
-async def list_users(message: Message, db: Database):
-    """Просмотр всех пользователей."""
-    if not is_admin(message.from_user.id):
-        return
-
-    users = await db.get_all_users()
-    if not users:
-        await message.answer("👥 В базе пока нет пользователей.")
-        return
-
-    text = "👥 <b>Список пользователей:</b>\n\n"
-    for user in users:
-        text += (
-            f"ID: {user['id']}\n"
-            f"Username: @{user['username'] if user['username'] else 'нет'}\n"
-            f"Имя: {user['first_name'] or 'нет'}\n"
-            f"Дата регистрации: {user['created_at']}\n"
-            f"Реферальный код: {user['referral_code']}\n"
-            f"Пригласил: {user['referred_by'] or 'нет'}\n"
-            f"Баланс: {user['balance']} руб.\n\n"
+        await callback.message.edit_text(
+            "📭 Список товаров пуст.\n\n"
+            "Добавьте первый товар!",
+            reply_markup=get_admin_panel_keyboard()
         )
-
-    if len(text) > 4000:
-        for i in range(0, len(text), 4000):
-            await message.answer(text[i:i+4000])
-    else:
-        await message.answer(text)
-
-
-@router.message(F.text == "📊 Статистика")
-async def show_stats(message: Message, db: Database):
-    """Просмотр статистики."""
-    if not is_admin(message.from_user.id):
+        await callback.answer()
         return
-
-    stats = await db.get_stats()
-    if not stats:
-        await message.answer("❌ Не удалось получить статистику.")
-        return
-
-    text = (
-        "📊 <b>Статистика бота:</b>\n\n"
-        f"👥 Всего пользователей: {stats['total_users']}\n"
-        f"📦 Всего товаров: {stats['total_products']}\n"
-        f"💰 Всего заказов: {stats['total_orders']}\n"
-        f"💵 Общая выручка: {stats['total_revenue']} руб.\n"
-        f"📈 Средний чек: {stats['avg_order_value']} руб."
-    )
-
-    await message.answer(text)
-
-
-@router.callback_query(F.data == "admin_cancel")
-async def cancel_action(callback: CallbackQuery, state: FSMContext):
-    """Отмена текущего действия."""
-    await state.clear()
+    
     await callback.message.edit_text(
-        "❌ Действие отменено.",
-        reply_markup=None
-    )
-    await callback.message.answer(
-        "Выберите действие:",
-        reply_markup=await get_admin_main_keyboard()
+        "📦 Список товаров:\n\n"
+        "Выберите товар для управления:",
+        reply_markup=get_admin_products_keyboard(products)
     )
     await callback.answer()
 
 
-# Обработчик для неизвестных команд в админ-панели
-@router.message(StateFilter(AdminStates))
-async def unknown_admin_action(message: Message):
-    """Обработка неизвестных действий в админ-панели."""
-    if not is_admin(message.from_user.id):
+@router.callback_query(F.data.startswith("admin_product:"), StateFilter(AdminStates.admin_menu))
+async def admin_product_actions(callback: CallbackQuery, state: FSMContext):
+    """Действия с выбранным товаром."""
+    product_id = int(callback.data.split(":", 1)[1])
+    product = await db.get_product(product_id)
+    
+    if not product:
+        await callback.answer("❌ Товар не найден", show_alert=True)
         return
-
-    await message.answer(
-        "⚠️ Неизвестная команда. Используйте кнопки меню или введите /admin для перезапуска."
+    
+    await state.update_data(editing_product_id=product_id)
+    
+    await callback.message.edit_text(
+        f"📦 Товар: {product['name']}\n"
+        f"💰 Цена: {product['price']}₽\n"
+        f"📂 Категория: {product['category']}\n"
+        f"📝 Описание: {product['description'][:100]}...\n\n"
+        f"Выберите действие:",
+        reply_markup=get_admin_product_actions_keyboard(product_id)
     )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_edit_name:"), StateFilter(AdminStates.admin_menu))
+async def admin_edit_product_name_start(callback: CallbackQuery, state: FSMContext):
+    """Начало редактирования названия."""
+    await state.set_state(AdminStates.editing_product_name)
+    await callback.message.edit_text(
+        "✏️ Введите новое название товара:"
+    )
+    await callback.answer()
+
+
+@router.message(StateFilter(AdminStates.editing_product_name))
+async def admin_edit_product_name(message: Message, state: FSMContext):
+    """Получение нового названия."""
+    if not message.text or len(message.text) > 100:
+        await message.answer("❌ Название товара должно быть не длиннее 100 символов. Попробуйте еще раз:")
+        return
+    
+    data = await state.get_data()
+    product_id = data.get("editing_product_id")
+    
+    try:
+        await db.update_product(product_id, name=message.text)
+        await message.answer("✅ Название товара обновлено!")
+    except Exception as e:
+        logger.error(f"Ошибка обновления названия: {e}")
+        await message.answer("❌ Ошибка при обновлении названия.")
+    
+    await state.clear()
+    await state.set_state(AdminStates.admin_menu)
+    await message.answer(
+        "👨‍💻 Админ-панель",
+        reply_markup=get_admin_panel_keyboard()
+    )
+
+
+@router.callback_query(F.data.startswith("admin_edit_description:"), StateFilter(AdminStates.admin_menu))
+async def admin_edit_product_description_start(callback: CallbackQuery, state: FSMContext):
+    """Начало редактирования описания."""
+    await state.set_state(AdminStates.editing_product_description)
+    await callback.message.edit_text(
+        "✏️ Введите новое описание товара:"
+    )
+    await callback.answer()
+
+
+@router.message(StateFilter(AdminStates.editing_product_description))
+async def admin_edit_product_description(message: Message, state: FSMContext):
+    """Получение нового описания."""
+    if not message.text or len(message.text) > 1000:
+        await message.answer("❌ Описание товара должно быть не длиннее 1000 символов. Попробуйте еще раз:")
+        return
+    
+    data = await state.get_data()
+    product_id = data.get("editing_product_id")
+    
+    try:
+        await db.update_product(product_id, description=message.text)
+        await message.answer("✅ Описание товара обновлено!")
+    except Exception as e:
+        logger.error(f"Ошибка обновления описания: {e}")
+        await message.answer("❌ Ошибка при обновлении описания.")
+    
+    await state.clear()
+    await state.set_state(AdminStates.admin_menu)
+    await message.answer(
+        "👨‍💻 Админ-панель",
+        reply_markup=get_admin_panel_keyboard()
+    )
+
+
+@router.callback_query(F.data.startswith("admin_edit_price:"), StateFilter(AdminStates.admin_menu))
+async def admin_edit_product_price_start(callback: CallbackQuery, state: FSMContext):
+    """Начало редактирования цены."""
+    await state.set_state(AdminStates.editing_product_price)
+    await callback.message.edit_text(
+        "✏️ Введите новую цену товара (в рублях):"
+    )
+    await callback.answer()
+
+
+@router.message(StateFilter(AdminStates.editing_product_price))
+async def admin_edit_product_price(message: Message, state: FSMContext):
+    """Получение новой цены."""
+    try:
+        price = float(message.text)
+        if price <= 0:
+            raise ValueError
+    except ValueError:
+        await message.answer("❌ Цена должна быть положительным числом. Попробуйте еще раз:")
+        return
+    
+    data = await state.get_data()
+    product_id = data.get("editing_product_id")
+    
+    try:
+        await db.update_product(product_id, price=price)
+        await message.answer("✅ Цена товара обновлена!")
+    except Exception as e:
+        logger.error(f"Ошибка обновления цены: {e}")
+        await message.answer("❌ Ошибка при обновлении цены.")
+    
+    await state.clear()
+    await state.set_state(AdminStates.admin_menu)
+    await message.answer(
+        "👨‍💻 Админ-панель",
+        reply_markup=get_admin_panel_keyboard()
+    )
+
+
+@router.callback_query(F.data.startswith("admin_edit_category:"), StateFilter(AdminStates.admin_menu))
+async def admin_edit_product_category_start(callback: CallbackQuery, state: FSMContext):
+    """Начало редактирования категории."""
+    categories = await db.get_categories()
+    if not categories:
+        await callback.answer("❌ Нет доступных категорий", show_alert=True)
+        return
+    
+    await state.set_state(AdminStates.editing_product_category)
+    await callback.message.edit_text(
+        "✏️ Выберите новую категорию:",
+        reply_markup=get_admin_categories_keyboard(categories)
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_category:"), StateFilter(AdminStates.editing_product_category))
+async def admin_edit_product_category(callback: CallbackQuery, state: FSMContext):
+    """Выбор новой категории."""
+    category = callback.data.split(":", 1)[1]
+    data = await state.get_data()
+    product_id = data.get("editing_product_id")
+    
+    try:
+        await db.update_product(product_id, category=category)
+        await callback.message.edit_text("✅ Категория товара обновлена!")
+    except Exception as e:
+        logger.error(f"Ошибка обновления категории: {e}")
+        await callback.message.edit_text("❌ Ошибка при обновлении категории.")
+    
+    await state.clear()
+    await state.set_state(AdminStates.admin_menu)
+    await callback.message.answer(
+        "👨‍💻 Админ-панель",
+        reply_markup=get_admin_panel_keyboard()
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("admin_edit_file:"), StateFilter(AdminStates.admin_menu))
+async def admin_edit_product_file_start(callback: CallbackQuery, state: FSMContext):
+    """Начало редактирования файла."""
+    await state.set_state(AdminStates.editing_product_file_id)
+    await callback.message.edit_text(
+        "📎 Отправьте новый файл товара (или введите file_id):"
+    )
+    await callback.answer()
+
+
+@router.message(StateFilter(AdminStates.editing_product_file_id))
+async def admin_edit_product_file(message: Message, state: FSMContext):
+    """Получение нового файла."""
+    file_id = None
+    file_path = None
+    
+    if message.document:
+        file_id = message.document.file_id
+        file_path = f"{settings.PRODUCTS_DIR}/{message.document.file_name}"
+    elif message.text:
+        file_id = message.text.strip()
+        file_path = f"{settings.PRODUCTS_DIR}/product_{file_id[:10]}.dat"
+    else:
+        await message.answer("❌ Пожалуйста, отправьте файл или введите file_id:")
+        return
+    
+    data = await state.get_data()
+    product_id = data.get("editing_product_id")
+    
+    try:
+        await db.update_product(product_id, file_id=file_id, file_path=file_path)
+        await message.answer("✅ Файл товара обновлен!")
+    except Exception as e:
+        logger.error(f"Ошибка обновления файла: {e}")
+        await message.answer("❌ Ошибка при обновлении файла.")
+    
+    await state.clear()
+    await state.set_state(AdminStates.admin_menu)
+    await message.answer(
+        "👨‍💻 Админ-панель",
+        reply_markup=get_admin_panel_keyboard()
+    )
+
+
+@router.callback_query(F.data.startswith("admin_delete:"), StateFilter(AdminStates.admin_menu))
+async def admin_delete_product_confirm(callback: CallbackQuery, state: FSMContext):
+    """Подтверждение удаления товара."""
+    product_id = int(callback.data.split(":", 1)[1])
+    await state.update_data(deleting_product_id=product_id)
+    await state.set_state(AdminStates.deleting_product_confirm)
+    
+    await callback.message.edit_text(
+        "⚠️ Вы уверены, что хотите удалить этот товар?\n"
+        "Это действие необратимо!",
+        reply_markup=get_admin_confirm_keyboard()
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_confirm_delete", StateFilter(AdminStates.deleting_product_confirm))
+async def admin_delete_product(callback: CallbackQuery, state: FSMContext):
+    """Удаление товара."""
+    data = await state.get_data()
+    product_id = data.get("deleting_product_id")
+    
+    try:
+        await db.delete_product(product_id)
+        await callback.message.edit_text("✅ Товар успешно удален!")
+    except Exception as e:
+        logger.error(f"Ошибка удаления товара: {e}")
+        await callback.message.edit_text("❌ Ошибка при удалении товара.")
+    
+    await state.clear()
+    await state.set_state(AdminStates.admin_menu)
+    await callback.message.answer(
+        "👨‍💻 Админ-панель",
+        reply_markup=get_admin_panel_keyboard()
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_cancel_delete", StateFilter(AdminStates.deleting_product_confirm))
+async def admin_cancel_delete(callback: CallbackQuery, state: FSMContext):
+    """Отмена удаления."""
+    await state.clear()
+    await state.set_state(AdminStates.admin_menu)
+    await callback.message.edit_text(
+        "👨‍💻 Админ-панель",
+        reply_markup=get_admin_panel_keyboard()
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_stats", StateFilter(AdminStates.admin_menu))
+async def admin_stats(callback: CallbackQuery, state: FSMContext):
+    """Просмотр статистики."""
+    try:
+        users_count = await db.get_users_count()
+        products_count = await db.get_products_count()
+        orders_count = await db.get_orders_count()
+        total_revenue = await db.get_total_revenue()
+        
+        await callback.message.edit_text(
+            f"📊 Статистика бота:\n\n"
+            f"👥 Пользователей: {users_count}\n"
+            f"📦 Товаров: {products_count}\n"
+            f"🛒 Заказов: {orders_count}\n"
+            f"💰 Общая выручка: {total_revenue}₽",
+            reply_markup=get_admin_panel_keyboard()
+        )
+    except Exception as e:
+        logger.error(f"Ошибка получения статистики: {e}")
+        await callback.message.edit_text(
+            "❌ Ошибка при получении статистики.",
+            reply_markup=get_admin_panel_keyboard()
+        )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "admin_back", StateFilter(AdminStates.admin_menu))
+async def admin_back(callback: CallbackQuery, state: FSMContext):
+    """Возврат в главное меню."""
+    await state.clear()
+    await callback.message.edit_text(
+        "🏠 Главное меню",
+        reply_markup=get_main_menu()
+    )
+    await callback.answer()
