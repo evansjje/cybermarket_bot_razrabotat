@@ -241,3 +241,109 @@ async def get_all_products():
     async with aiosqlite.connect(DB_PATH) as db:
         cursor = await db.execute('SELECT * FROM products')
         return await cursor.fetchall()
+
+
+async def get_cart_total(user_id: int) -> float:
+    """Получение общей стоимости корзины пользователя"""
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute('''
+            SELECT SUM(p.price * c.count)
+            FROM cart c
+            JOIN products p ON c.product_id = p.id
+            WHERE c.user_id = ?
+        ''', (user_id,))
+        result = await cursor.fetchone()
+        return result[0] if result and result[0] else 0.0
+
+
+async def get_all_users_count() -> int:
+    """Получение общего количества пользователей"""
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute('SELECT COUNT(*) FROM users')
+        result = await cursor.fetchone()
+        return result[0] if result else 0
+
+
+async def delete_product(product_id: int):
+    """Удаление товара по ID"""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute('DELETE FROM cart WHERE product_id = ?', (product_id,))
+        await db.execute('DELETE FROM orders WHERE product_id = ?', (product_id,))
+        await db.execute('DELETE FROM products WHERE id = ?', (product_id,))
+        await db.commit()
+
+
+async def remove_from_cart(user_id: int, product_id: int):
+    """Удаление товара из корзины"""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            'DELETE FROM cart WHERE user_id = ? AND product_id = ?',
+            (user_id, product_id)
+        )
+        await db.commit()
+
+
+async def update_cart_item(user_id: int, product_id: int, count: int):
+    """Обновление элемента корзины (алиас для update_cart_count)"""
+    await update_cart_count(user_id, product_id, count)
+
+
+async def get_referral_count(user_id: int) -> int:
+    """Получение количества рефералов пользователя"""
+    # В текущей схеме нет таблицы рефералов, возвращаем 0
+    return 0
+
+
+async def get_referral_earnings(user_id: int) -> float:
+    """Получение заработка с рефералов"""
+    # В текущей схеме нет таблицы рефералов, возвращаем 0.0
+    return 0.0
+
+
+async def get_cart_items(user_id: int):
+    """Получение элементов корзины (алиас для get_cart)"""
+    return await get_cart(user_id)
+
+
+async def get_all_orders_count() -> int:
+    """Получение общего количества заказов"""
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute('SELECT COUNT(*) FROM orders')
+        result = await cursor.fetchone()
+        return result[0] if result else 0
+
+
+class Database:
+    """Класс-обёртка для работы с базой данных"""
+    
+    def __init__(self, db_path: str = DB_PATH):
+        self.db_path = db_path
+    
+    async def connect(self):
+        """Установка соединения с базой данных"""
+        self.connection = await aiosqlite.connect(self.db_path)
+        return self.connection
+    
+    async def close(self):
+        """Закрытие соединения"""
+        if hasattr(self, 'connection'):
+            await self.connection.close()
+    
+    async def execute(self, query: str, params: tuple = ()):
+        """Выполнение SQL-запроса"""
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute(query, params)
+            await db.commit()
+            return cursor
+    
+    async def fetchone(self, query: str, params: tuple = ()):
+        """Получение одной записи"""
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute(query, params)
+            return await cursor.fetchone()
+    
+    async def fetchall(self, query: str, params: tuple = ()):
+        """Получение всех записей"""
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute(query, params)
+            return await cursor.fetchall()

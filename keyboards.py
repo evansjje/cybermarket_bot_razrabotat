@@ -92,3 +92,75 @@ def admin_products_keyboard(products: list) -> InlineKeyboardMarkup:
     builder.button(text="⬅️ Назад", callback_data="admin_back")
     builder.adjust(1)
     return builder.as_markup()
+
+
+# ===== Недостающие функции =====
+
+def admin_categories_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура управления категориями для админа"""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="➕ Добавить категорию", callback_data="admin_add_category")
+    builder.button(text="🗑 Удалить категорию", callback_data="admin_del_category")
+    builder.button(text="⬅️ Назад", callback_data="admin_back")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def support_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура поддержки"""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="📝 Задать вопрос", callback_data="support_question")
+    builder.button(text="📞 Связаться с оператором", callback_data="support_operator")
+    builder.button(text="⬅️ В меню", callback_data="back_to_menu")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def reviews_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура отзывов"""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="⭐ Оставить отзыв", callback_data="add_review")
+    builder.button(text="📖 Все отзывы", callback_data="all_reviews")
+    builder.button(text="⬅️ В меню", callback_data="back_to_menu")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def admin_product_actions_keyboard(product_id: int) -> InlineKeyboardMarkup:
+    """Клавиатура действий с товаром для админа"""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✏️ Изменить", callback_data=f"admin_edit_{product_id}")
+    builder.button(text="🗑 Удалить", callback_data=f"admin_del_{product_id}")
+    builder.button(text="⬅️ Назад", callback_data="admin_products")
+    builder.adjust(2)
+    return builder.as_markup()
+
+
+def admin_panel_keyboard() -> ReplyKeyboardMarkup:
+    """Клавиатура админ-панели (алиас для admin_menu_keyboard)"""
+    return admin_menu_keyboard()
+
+
+def main_menu_kb(user_id: int) -> ReplyKeyboardMarkup:
+    """Алиас для main_menu_keyboard"""
+    return main_menu_keyboard(user_id)
+
+
+def referral_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура реферальной системы"""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔗 Моя ссылка", callback_data="my_referral_link")
+    builder.button(text="👥 Мои рефералы", callback_data="my_referrals")
+    builder.button(text="⬅️ В меню", callback_data="back_to_menu")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def cart_actions_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура действий с корзиной"""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="💳 Оплатить", callback_data="checkout")
+    builder.button(text="🗑 Очистить", callback_data="clear_cart")
+    builder.button(text="⬅️ В меню", callback_data="back_to_menu")
+    builder.adjust(1)
+    return builder.as_markup()
