@@ -4,6 +4,20 @@ from config import settings
 from database import get_connection
 
 
+async def main_menu_kb(user_id: int) -> ReplyKeyboardMarkup:
+    return await get_main_menu(user_id)
+
+
+async def get_cart_actions_keyboard(product_id: int, count: int = 1) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="➖", callback_data=f"dec_{product_id}")
+    builder.button(text=f"{count} шт", callback_data="noop")
+    builder.button(text="➕", callback_data=f"inc_{product_id}")
+    builder.button(text="❌ Удалить", callback_data=f"del_{product_id}")
+    builder.adjust(3, 1)
+    return builder.as_markup()
+
+
 async def get_main_menu(user_id: int) -> ReplyKeyboardMarkup:
     builder = ReplyKeyboardBuilder()
     builder.row(KeyboardButton(text="🛍 Каталог"), KeyboardButton(text="🛒 Корзина"))
