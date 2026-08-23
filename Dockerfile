@@ -12,20 +12,25 @@ RUN apt-get update && apt-get install -y \
 # Копируем файл с зависимостями
 COPY requirements.txt .
 
-# Устанавливаем зависимости Python
+# Устанавливаем Python-зависимости
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Копируем все файлы проекта
+# Копируем исходный код проекта
 COPY . .
 
-# Создаем директорию для медиафайлов
-RUN mkdir -p media
+# Создаем директорию для базы данных и файлов
+RUN mkdir -p /app/data /app/files
 
 # Указываем переменные окружения
 ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1
+    PYTHONDONTWRITEBYTECODE=1 \
+    BOT_TOKEN="YOUR_BOT_TOKEN_HERE" \
+    YOOKASSA_SHOP_ID="YOUR_SHOP_ID_HERE" \
+    YOOKASSA_SECRET_KEY="YOUR_SECRET_KEY_HERE" \
+    YOOKASSA_PAYMENT_TOKEN="YOUR_PAYMENT_TOKEN_HERE" \
+    ADMIN_IDS="[123456789]"
 
-# Открываем порт (если нужен, для вебхуков)
+# Открываем порт (если нужно)
 EXPOSE 8080
 
 # Команда для запуска бота

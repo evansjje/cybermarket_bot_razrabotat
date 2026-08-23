@@ -1,194 +1,332 @@
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, KeyboardButton, ReplyKeyboardMarkup
-from aiogram.utils.keyboard import InlineKeyboardBuilder
-from typing import List, Optional, Dict, Any
-from config import Settings
-
-settings = Settings()
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
+from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
+from typing import Optional, List, Dict, Any
 
 # ==================== ГЛАВНОЕ МЕНЮ ====================
 
 def get_main_menu() -> ReplyKeyboardMarkup:
-    """Главное меню бота."""
-    buttons = [
-        [KeyboardButton(text="🛍 Каталог")],
-        [KeyboardButton(text="🛒 Корзина")],
-        [KeyboardButton(text="👥 Реферальная программа")],
-        [KeyboardButton(text="⭐️ Отзывы")],
-        [KeyboardButton(text="📞 Поддержка")]
-    ]
-    return ReplyKeyboardMarkup(
-        keyboard=buttons,
-        resize_keyboard=True,
-        input_field_placeholder="Выберите действие"
+    """Главное меню бота"""
+    builder = ReplyKeyboardBuilder()
+    builder.row(
+        KeyboardButton(text="🛍 Каталог"),
+        KeyboardButton(text="🛒 Корзина")
     )
+    builder.row(
+        KeyboardButton(text="👥 Реферальная программа"),
+        KeyboardButton(text="⭐️ Отзывы")
+    )
+    builder.row(
+        KeyboardButton(text="📞 Поддержка")
+    )
+    return builder.as_markup(resize_keyboard=True)
 
 # ==================== КАТАЛОГ ====================
 
-def get_catalog_menu(categories: List[str]) -> InlineKeyboardMarkup:
-    """Меню каталога с категориями."""
+def get_catalog_keyboard(categories: List[str]) -> InlineKeyboardMarkup:
+    """Клавиатура с категориями товаров"""
     builder = InlineKeyboardBuilder()
     for category in categories:
         builder.button(
-            text=f"📁 {category}",
+            text=f"📂 {category}",
             callback_data=f"category:{category}"
         )
-    builder.button(text="🏠 Главное меню", callback_data="main_menu")
+    builder.button(
+        text="🔙 Назад",
+        callback_data="back_to_main"
+    )
     builder.adjust(1)
     return builder.as_markup()
 
-def get_products_menu(products: List[Dict[str, Any]], category: str) -> InlineKeyboardMarkup:
-    """Меню товаров в категории."""
+def get_products_keyboard(products: List[Dict[str, Any]]) -> InlineKeyboardMarkup:
+    """Клавиатура с товарами в категории"""
     builder = InlineKeyboardBuilder()
     for product in products:
         builder.button(
-            text=f"📦 {product['name']} - {product['price']}₽",
+            text=f"{product['name']} - {product['price']}₽",
             callback_data=f"product:{product['id']}"
         )
-    builder.button(text="⬅️ Назад", callback_data="back_to_categories")
-    builder.button(text="🏠 Главное меню", callback_data="main_menu")
+    builder.button(
+        text="🔙 Назад к категориям",
+        callback_data="back_to_categories"
+    )
     builder.adjust(1)
     return builder.as_markup()
 
-def get_product_actions(product_id: int) -> InlineKeyboardMarkup:
-    """Действия с товаром."""
+def get_product_keyboard(product_id: int, in_cart: bool = False) -> InlineKeyboardMarkup:
+    """Клавиатура для конкретного товара"""
     builder = InlineKeyboardBuilder()
-    builder.button(text="🛒 Добавить в корзину", callback_data=f"add_to_cart:{product_id}")
-    builder.button(text="⬅️ Назад", callback_data="back_to_products")
-    builder.button(text="🏠 Главное меню", callback_data="main_menu")
+    if not in_cart:
+        builder.button(
+            text="🛒 Добавить в корзину",
+            callback_data=f"add_to_cart:{product_id}"
+        )
+    else:
+        builder.button(
+            text="✅ В корзине",
+            callback_data="already_in_cart"
+        )
+    builder.button(
+        text="🔙 Назад",
+        callback_data="back_to_products"
+    )
     builder.adjust(1)
     return builder.as_markup()
 
 # ==================== КОРЗИНА ====================
 
-def get_cart_menu(cart_items: List[Dict[str, Any]], total_price: float) -> InlineKeyboardMarkup:
-    """Меню корзины."""
+def get_cart_keyboard(cart_items: List[Dict[str, Any]]) -> InlineKeyboardMarkup:
+    """Клавиатура корзины"""
     builder = InlineKeyboardBuilder()
     for item in cart_items:
         builder.button(
-            text=f"❌ {item['name']} - {item['price']}₽",
-            callback_data=f"remove_from_cart:{item['product_id']}"
+            text=f"❌ {item['name']}",
+            callback_data=f"remove_from_cart:{item['id']}"
         )
-    builder.button(text="💳 Оплатить", callback_data="checkout")
-    builder.button(text="🗑 Очистить корзину", callback_data="clear_cart")
-    builder.button(text="⬅️ Назад", callback_data="main_menu")
+    builder.button(
+        text="💳 Оплатить",
+        callback_data="checkout"
+    )
+    builder.button(
+        text="🗑 Очистить корзину",
+        callback_data="clear_cart"
+    )
+    builder.button(
+        text="🔙 В каталог",
+        callback_data="back_to_categories"
+    )
+    builder.adjust(1)
+    return builder.as_markup()
+
+def get_payment_keyboard(payment_url: str) -> InlineKeyboardMarkup:
+    """Клавиатура для оплаты"""
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="💳 Оплатить через YooKassa",
+        url=payment_url
+    )
+    builder.button(
+        text="✅ Я оплатил",
+        callback_data="check_payment"
+    )
+    builder.button(
+        text="🔙 Отменить",
+        callback_data="cancel_payment"
+    )
     builder.adjust(1)
     return builder.as_markup()
 
 # ==================== РЕФЕРАЛЬНАЯ ПРОГРАММА ====================
 
-def get_referral_menu() -> InlineKeyboardMarkup:
-    """Меню реферальной программы."""
+def get_referral_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура реферальной программы"""
     builder = InlineKeyboardBuilder()
-    builder.button(text="🔗 Получить реферальную ссылку", callback_data="get_referral_link")
-    builder.button(text="📊 Моя статистика", callback_data="referral_stats")
-    builder.button(text="🏠 Главное меню", callback_data="main_menu")
+    builder.button(
+        text="🔗 Моя реферальная ссылка",
+        callback_data="my_referral_link"
+    )
+    builder.button(
+        text="💰 Мои рефералы",
+        callback_data="my_referrals"
+    )
+    builder.button(
+        text="💵 Вывести средства",
+        callback_data="withdraw"
+    )
+    builder.button(
+        text="🔙 Назад",
+        callback_data="back_to_main"
+    )
     builder.adjust(1)
     return builder.as_markup()
 
 # ==================== ОТЗЫВЫ ====================
 
-def get_reviews_menu() -> InlineKeyboardMarkup:
-    """Меню отзывов."""
+def get_reviews_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура отзывов"""
     builder = InlineKeyboardBuilder()
-    builder.button(text="📝 Оставить отзыв", callback_data="write_review")
-    builder.button(text="📖 Читать отзывы", callback_data="read_reviews")
-    builder.button(text="🏠 Главное меню", callback_data="main_menu")
+    builder.button(
+        text="📝 Оставить отзыв",
+        callback_data="write_review"
+    )
+    builder.button(
+        text="📖 Читать отзывы",
+        callback_data="read_reviews"
+    )
+    builder.button(
+        text="🔙 Назад",
+        callback_data="back_to_main"
+    )
     builder.adjust(1)
     return builder.as_markup()
 
 # ==================== ПОДДЕРЖКА ====================
 
-def get_support_menu() -> InlineKeyboardMarkup:
-    """Меню поддержки."""
+def get_support_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура поддержки"""
     builder = InlineKeyboardBuilder()
     builder.button(
-        text="📞 Связаться с поддержкой",
-        url=f"https://t.me/{settings.SUPPORT_USERNAME}"
+        text="📨 Написать в поддержку",
+        callback_data="contact_support"
     )
-    builder.button(text="🏠 Главное меню", callback_data="main_menu")
-    builder.adjust(1)
-    return builder.as_markup()
-
-# ==================== ОПЛАТА ====================
-
-def get_payment_menu(order_id: int) -> InlineKeyboardMarkup:
-    """Меню оплаты."""
-    builder = InlineKeyboardBuilder()
-    builder.button(text="💳 Оплатить через YooKassa", callback_data=f"pay_yookassa:{order_id}")
-    if settings.TELEGRAM_PAYMENT_TOKEN:
-        builder.button(text="💳 Оплатить через Telegram", callback_data=f"pay_telegram:{order_id}")
-    builder.button(text="🏠 Главное меню", callback_data="main_menu")
+    builder.button(
+        text="❓ FAQ",
+        callback_data="faq"
+    )
+    builder.button(
+        text="🔙 Назад",
+        callback_data="back_to_main"
+    )
     builder.adjust(1)
     return builder.as_markup()
 
 # ==================== АДМИН-ПАНЕЛЬ ====================
 
-def get_admin_menu() -> InlineKeyboardMarkup:
-    """Главное меню админ-панели."""
+def get_admin_keyboard() -> InlineKeyboardMarkup:
+    """Главное меню админ-панели"""
     builder = InlineKeyboardBuilder()
-    builder.button(text="➕ Добавить товар", callback_data="admin_add_product")
-    builder.button(text="📝 Редактировать товар", callback_data="admin_edit_product")
-    builder.button(text="🗑 Удалить товар", callback_data="admin_delete_product")
-    builder.button(text="📊 Статистика", callback_data="admin_stats")
-    builder.button(text="📦 Управление категориями", callback_data="admin_categories")
-    builder.button(text="🏠 Главное меню", callback_data="main_menu")
+    builder.button(
+        text="➕ Добавить товар",
+        callback_data="admin_add_product"
+    )
+    builder.button(
+        text="📝 Редактировать товар",
+        callback_data="admin_edit_product"
+    )
+    builder.button(
+        text="🗑 Удалить товар",
+        callback_data="admin_delete_product"
+    )
+    builder.button(
+        text="📊 Статистика",
+        callback_data="admin_stats"
+    )
+    builder.button(
+        text="👥 Пользователи",
+        callback_data="admin_users"
+    )
+    builder.button(
+        text="🔙 Назад",
+        callback_data="back_to_main"
+    )
     builder.adjust(1)
     return builder.as_markup()
 
-def get_admin_product_actions(product_id: int) -> InlineKeyboardMarkup:
-    """Действия с товаром в админ-панели."""
+def get_admin_products_keyboard(products: List[Dict[str, Any]], action: str) -> InlineKeyboardMarkup:
+    """Клавиатура выбора товара для админа"""
     builder = InlineKeyboardBuilder()
-    builder.button(text="✏️ Изменить название", callback_data=f"admin_edit_name:{product_id}")
-    builder.button(text="💰 Изменить цену", callback_data=f"admin_edit_price:{product_id}")
-    builder.button(text="📝 Изменить описание", callback_data=f"admin_edit_desc:{product_id}")
-    builder.button(text="📁 Изменить категорию", callback_data=f"admin_edit_cat:{product_id}")
-    builder.button(text="🔗 Изменить ссылку", callback_data=f"admin_edit_link:{product_id}")
-    builder.button(text="⬅️ Назад", callback_data="admin_menu")
-    builder.adjust(1)
-    return builder.as_markup()
-
-def get_admin_categories_menu(categories: List[str]) -> InlineKeyboardMarkup:
-    """Меню управления категориями."""
-    builder = InlineKeyboardBuilder()
-    for category in categories:
+    for product in products:
         builder.button(
-            text=f"🗑 {category}",
-            callback_data=f"admin_del_cat:{category}"
+            text=f"{product['name']} - {product['price']}₽",
+            callback_data=f"admin_{action}:{product['id']}"
         )
-    builder.button(text="➕ Добавить категорию", callback_data="admin_add_cat")
-    builder.button(text="⬅️ Назад", callback_data="admin_menu")
+    builder.button(
+        text="🔙 Назад",
+        callback_data="admin_back"
+    )
     builder.adjust(1)
     return builder.as_markup()
 
-def get_admin_confirm_delete(product_id: int) -> InlineKeyboardMarkup:
-    """Подтверждение удаления товара."""
+def get_admin_edit_keyboard(product_id: int) -> InlineKeyboardMarkup:
+    """Клавиатура редактирования товара"""
     builder = InlineKeyboardBuilder()
-    builder.button(text="✅ Да, удалить", callback_data=f"admin_confirm_del:{product_id}")
-    builder.button(text="❌ Отмена", callback_data="admin_menu")
+    builder.button(
+        text="✏️ Название",
+        callback_data=f"edit_name:{product_id}"
+    )
+    builder.button(
+        text="📝 Описание",
+        callback_data=f"edit_description:{product_id}"
+    )
+    builder.button(
+        text="💰 Цена",
+        callback_data=f"edit_price:{product_id}"
+    )
+    builder.button(
+        text="📂 Категория",
+        callback_data=f"edit_category:{product_id}"
+    )
+    builder.button(
+        text="📎 Файл",
+        callback_data=f"edit_file:{product_id}"
+    )
+    builder.button(
+        text="🔗 Ссылка",
+        callback_data=f"edit_link:{product_id}"
+    )
+    builder.button(
+        text="✅ Готово",
+        callback_data="admin_back"
+    )
+    builder.adjust(2)
+    return builder.as_markup()
+
+def get_admin_confirm_keyboard(action: str, product_id: int) -> InlineKeyboardMarkup:
+    """Клавиатура подтверждения действия"""
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="✅ Подтвердить",
+        callback_data=f"confirm_{action}:{product_id}"
+    )
+    builder.button(
+        text="❌ Отмена",
+        callback_data="admin_back"
+    )
+    builder.adjust(2)
+    return builder.as_markup()
+
+# ==================== ОБЩИЕ КЛАВИАТУРЫ ====================
+
+def get_back_keyboard(callback_data: str = "back_to_main") -> InlineKeyboardMarkup:
+    """Универсальная клавиатура с кнопкой назад"""
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="🔙 Назад",
+        callback_data=callback_data
+    )
+    return builder.as_markup()
+
+def get_confirm_keyboard(action: str) -> InlineKeyboardMarkup:
+    """Универсальная клавиатура подтверждения"""
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="✅ Да",
+        callback_data=f"confirm_{action}"
+    )
+    builder.button(
+        text="❌ Нет",
+        callback_data="cancel"
+    )
+    builder.adjust(2)
+    return builder.as_markup()
+
+def get_payment_methods_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура выбора способа оплаты"""
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="💳 YooKassa",
+        callback_data="pay_yookassa"
+    )
+    builder.button(
+        text="⚡️ Telegram Payments",
+        callback_data="pay_telegram"
+    )
+    builder.button(
+        text="🔙 Назад",
+        callback_data="back_to_cart"
+    )
     builder.adjust(1)
     return builder.as_markup()
 
-def get_admin_confirm_del_cat(category: str) -> InlineKeyboardMarkup:
-    """Подтверждение удаления категории."""
+def get_delivery_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура способа доставки товара"""
     builder = InlineKeyboardBuilder()
-    builder.button(text="✅ Да, удалить", callback_data=f"admin_confirm_del_cat:{category}")
-    builder.button(text="❌ Отмена", callback_data="admin_categories")
-    builder.adjust(1)
-    return builder.as_markup()
-
-# ==================== ОБЩИЕ ====================
-
-def get_back_button(callback_data: str = "main_menu") -> InlineKeyboardMarkup:
-    """Кнопка назад."""
-    builder = InlineKeyboardBuilder()
-    builder.button(text="⬅️ Назад", callback_data=callback_data)
-    builder.adjust(1)
-    return builder.as_markup()
-
-def get_confirm_payment(order_id: int) -> InlineKeyboardMarkup:
-    """Подтверждение оплаты."""
-    builder = InlineKeyboardBuilder()
-    builder.button(text="✅ Я оплатил", callback_data=f"confirm_payment:{order_id}")
-    builder.button(text="❌ Отмена", callback_data="main_menu")
-    builder.adjust(1)
+    builder.button(
+        text="📎 Файл",
+        callback_data="delivery_file"
+    )
+    builder.button(
+        text="🔗 Ссылка",
+        callback_data="delivery_link"
+    )
+    builder.adjust(2)
     return builder.as_markup()
