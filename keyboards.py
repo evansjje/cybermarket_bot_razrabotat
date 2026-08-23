@@ -136,3 +136,36 @@ def admin_product_actions_kb(product_id: int) -> InlineKeyboardMarkup:
     builder.button(text="🔙 Назад", callback_data="admin_products")
     builder.adjust(1)
     return builder.as_markup()
+
+
+def back_to_admin_kb() -> InlineKeyboardMarkup:
+    """Клавиатура возврата в админ-панель."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔙 В админ-панель", callback_data="admin_back")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def back_to_menu_kb() -> InlineKeyboardMarkup:
+    """Клавиатура возврата в главное меню."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🏠 В меню", callback_data="back_to_menu")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def confirm_order_kb() -> InlineKeyboardMarkup:
+    """Клавиатура подтверждения заказа."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✅ Подтвердить заказ", callback_data="confirm_order")
+    builder.button(text="❌ Отменить", callback_data="cancel_order")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def back_to_categories_kb() -> InlineKeyboardMarkup:
+    """Клавиатура возврата к категориям."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔙 К категориям", callback_data="back_to_catalog")
+    builder.adjust(1)
+    return builder.as_markup()

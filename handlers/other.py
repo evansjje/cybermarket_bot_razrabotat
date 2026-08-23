@@ -118,3 +118,54 @@ async def back_to_menu_handler(message: Message, state: FSMContext):
         reply_markup=main_menu_kb(is_admin=is_admin),
         parse_mode="HTML"
     )
+
+
+async def show_support(message: Message, state: FSMContext):
+    """Показать меню поддержки."""
+    await message.answer(
+        "🆘 <b>Служба поддержки</b>\n\n"
+        "Опишите вашу проблему или вопрос, и мы ответим вам в ближайшее время.\n\n"
+        "Напишите ваше сообщение:",
+        parse_mode="HTML",
+        reply_markup=back_to_menu_kb()
+    )
+    await state.set_state(SupportStates.waiting_message)
+
+
+async def referral_program(message: Message):
+    """Показать реферальную программу."""
+    user_id = message.from_user.id
+    referral_code = f"REF{user_id}"
+    
+    user = await db.get_user(user_id)
+    if user and user.get("referral_code"):
+        referral_code = user["referral_code"]
+    
+    referrals_count = await db.get_referrals_count(user_id)
+    
+    await message.answer(
+        "👥 <b>Реферальная программа</b>\n\n"
+        f"Ваш реферальный код: <code>{referral_code}</code>\n\n"
+        f"Приглашено друзей: {referrals_count}\n\n"
+        "🎁 <b>Как это работает:</b>\n"
+        "1. Поделитесь вашим реферальным кодом с друзьями\n"
+        "2. Друг вводит ваш код при регистрации\n"
+        "3. Вы получаете бонусы на счёт\n\n"
+        "📎 Ваша реферальная ссылка:\n"
+        f"<code>https://t.me/CyberMarketBot?start={referral_code}</code>",
+        parse_mode="HTML",
+        reply_markup=back_to_menu_kb()
+    )
+
+
+async def show_reviews(message: Message):
+    """Показать отзывы о магазине."""
+    await message.answer(
+        "⭐ <b>Отзывы наших клиентов:</b>\n\n"
+        "🌟 «Отличный магазин! Всё работает, товар пришёл мгновенно» — Алексей\n"
+        "🌟 «Быстрая поддержка, качественные товары. Рекомендую!» — Мария\n"
+        "🌟 «Покупаю здесь постоянно, всё на высшем уровне» — Дмитрий\n\n"
+        "Хотите оставить отзыв? Напишите его в чат, и мы обязательно его опубликуем!",
+        parse_mode="HTML",
+        reply_markup=back_to_menu_kb()
+    )

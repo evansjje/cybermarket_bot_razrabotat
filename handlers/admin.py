@@ -22,9 +22,8 @@ class AdminStates(StatesGroup):
     waiting_product_stock = State()
 
 
-@router.message(Command("admin"))
-async def admin_panel(message: Message):
-    """Открыть админ-панель (только для админа)."""
+async def show_admin_panel(message: Message):
+    """Показать админ-панель (используется другими модулями)."""
     if message.from_user.id != settings.ADMIN_ID:
         await message.answer("⛔️ У вас нет доступа к админ-панели.")
         return
@@ -35,21 +34,18 @@ async def admin_panel(message: Message):
         reply_markup=admin_menu_kb(),
         parse_mode="HTML"
     )
+
+
+@router.message(Command("admin"))
+async def admin_panel(message: Message):
+    """Открыть админ-панель (только для админа)."""
+    await show_admin_panel(message)
 
 
 @router.message(F.text == "⚙️ Админ-панель")
 async def admin_panel_button(message: Message):
     """Открыть админ-панель через кнопку."""
-    if message.from_user.id != settings.ADMIN_ID:
-        await message.answer("⛔️ У вас нет доступа к админ-панели.")
-        return
-    
-    await message.answer(
-        "⚙️ <b>Админ-панель</b>\n\n"
-        "Выберите действие:",
-        reply_markup=admin_menu_kb(),
-        parse_mode="HTML"
-    )
+    await show_admin_panel(message)
 
 
 @router.callback_query(F.data == "admin_stats")
@@ -286,13 +282,4 @@ async def admin_back(callback: CallbackQuery):
 @router.message(F.text == "⚙️ Админ-панель")
 async def admin_panel_text(message: Message):
     """Обработка текстовой кнопки админ-панели."""
-    if message.from_user.id != settings.ADMIN_ID:
-        await message.answer("⛔️ У вас нет доступа к админ-панели.")
-        return
-    
-    await message.answer(
-        "⚙️ <b>Админ-панель</b>\n\n"
-        "Выберите действие:",
-        reply_markup=admin_menu_kb(),
-        parse_mode="HTML"
-    )
+    await show_admin_panel(message)
