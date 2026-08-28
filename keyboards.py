@@ -60,6 +60,15 @@ def product_kb(product_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
+def product_detail_kb(product_id: int) -> InlineKeyboardMarkup:
+    """Инлайн-кнопки детального просмотра товара"""
+    buttons = [
+        [InlineKeyboardButton(text='➕ В корзину', callback_data=f'buy_{product_id}')],
+        [InlineKeyboardButton(text='⬅️ Назад', callback_data='back_prod')]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
 def admin_products_kb(products: List[Dict]) -> InlineKeyboardMarkup:
     """Инлайн-кнопки админки для товаров"""
     buttons = []
@@ -71,6 +80,17 @@ def admin_products_kb(products: List[Dict]) -> InlineKeyboardMarkup:
             InlineKeyboardButton(text='🗑', callback_data=f'del_prod_{prod_id}')
         ])
     buttons.append([InlineKeyboardButton(text='⬅️ Назад', callback_data='back_admin')])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def admin_product_detail_kb(product_id: int) -> InlineKeyboardMarkup:
+    """Инлайн-кнопки детального просмотра товара в админке"""
+    buttons = [
+        [InlineKeyboardButton(text='✏️ Изменить цену', callback_data=f'edit_price_{product_id}')],
+        [InlineKeyboardButton(text='📝 Изменить описание', callback_data=f'edit_desc_{product_id}')],
+        [InlineKeyboardButton(text='🗑 Удалить', callback_data=f'del_prod_{product_id}')],
+        [InlineKeyboardButton(text='⬅️ Назад', callback_data='back_admin')]
+    ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
