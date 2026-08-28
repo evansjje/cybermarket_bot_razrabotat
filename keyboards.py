@@ -15,6 +15,11 @@ def main_menu(is_admin: bool = False) -> ReplyKeyboardMarkup:
     return builder.as_markup(resize_keyboard=True)
 
 
+def main_menu_kb(is_admin: bool = False) -> ReplyKeyboardMarkup:
+    """Главное меню (алиас для main_menu)"""
+    return main_menu(is_admin)
+
+
 def admin_menu() -> ReplyKeyboardMarkup:
     """Меню админ-панели"""
     builder = ReplyKeyboardBuilder()
