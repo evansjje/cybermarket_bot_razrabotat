@@ -1,95 +1,79 @@
-# handlers/cart.py
-from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram import Router, types, F
+from aiogram.types import CallbackQuery, Message, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 from database import Database
-from keyboards import CartCallback, get_main_menu
-from config import settings
+from keyboards import main_menu
 
 router = Router()
 
-@router.message(F.text == '🛒 Корзина')
-async def show_cart(message: Message, db: Database):
+
+@router.message(F.text == "🛒 Корзина")
+async def show_cart(message: Message, db: Database) -> None:
+    """Показать корзину пользователя"""
     user_id = message.from_user.id
     cart_items = await db.get_cart(user_id)
     
     if not cart_items:
         await message.answer(
-            "🛒 Ваша корзина пуста.\n\n"
-            "Добавьте товары из каталога!",
-            reply_markup=get_main_menu(user_id)
+            "🛒 Ваша корзина пуста!\n\n"
+            "Перейдите в каталог и добавьте товары.",
+            reply_markup=main_menu()
         )
         return
     
+    # Формируем текст корзины
     cart_text = "🛒 <b>Ваша корзина:</b>\n\n"
-    total_sum = 0
+    total_price = 0
     
     for item in cart_items:
-        title = item.get('title', 'Товар')
-        price = item.get('price', 0)
-        count = item.get('count', 1)
-        item_sum = price * count
-        total_sum += item_sum
-        
-        cart_text += f"📦 <b>{title}</b>\n"
-        cart_text += f"💰 Цена: {price:.2f} ₽ × {count} шт.\n"
-        cart_text += f"💵 Сумма: {item_sum:.2f} ₽\n"
-        cart_text += "➖➖➖➖➖➖➖\n"
+        product = await db.get_product(item['product_id'])
+        if product:
+            item_total = product['price'] * item['count']
+            total_price += item_total
+            cart_text += (
+                f"📦 <b>{product['name']}</b>\n"
+                f"💰 {product['price']}₽ × {item['count']} = {item_total}₽\n\n"
+            )
     
-    cart_text += f"\n<b>Итого: {total_sum:.2f} ₽</b>"
+    cart_text += f"<b>Итого: {total_price}₽</b>"
     
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="💳 Оплатить",
-                    callback_data=CartCallback(action='pay').pack()
-                ),
-                InlineKeyboardButton(
-                    text="🗑 Очистить",
-                    callback_data=CartCallback(action='clear').pack()
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="🛍 Продолжить покупки",
-                    callback_data=CartCallback(action='continue').pack()
-                )
-            ]
-        ]
-    )
+    # Создаем клавиатуру
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🧹 Очистить корзину", callback_data="clear_cart")
+    builder.button(text="✅ Оформить заказ", callback_data="checkout")
+    builder.button(text="⬅️ Назад", callback_data="back_to_menu")
+    builder.adjust(1)
     
     await message.answer(
         cart_text,
-        reply_markup=keyboard,
-        parse_mode='HTML'
+        reply_markup=builder.as_markup()
     )
 
-@router.callback_query(CartCallback.filter(F.action == 'clear'))
-async def clear_cart(callback: CallbackQuery, db: Database):
+
+@router.callback_query(F.data == "clear_cart")
+async def clear_cart(callback: CallbackQuery, db: Database) -> None:
+    """Очистить корзину"""
     await callback.answer()
     user_id = callback.from_user.id
     await db.clear_cart(user_id)
     
     try:
         await callback.message.edit_text(
-            "🗑 Корзина очищена!\n\n"
-            "Добавьте новые товары из каталога.",
+            "🗑 Корзина очищена!",
             reply_markup=InlineKeyboardMarkup(
                 inline_keyboard=[
-                    [
-                        InlineKeyboardButton(
-                            text="🛍 Перейти в каталог",
-                            callback_data=CartCallback(action='continue').pack()
-                        )
-                    ]
+                    [InlineKeyboardButton(text="🛍 Перейти в каталог", callback_data="catalog")],
+                    [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_menu")]
                 ]
             )
         )
     except Exception:
         pass
 
-@router.callback_query(CartCallback.filter(F.action == 'pay'))
-async def pay_cart(callback: CallbackQuery, db: Database):
+
+@router.callback_query(F.data == "checkout")
+async def checkout(callback: CallbackQuery, db: Database) -> None:
+    """Оформление заказа"""
     await callback.answer()
     user_id = callback.from_user.id
     cart_items = await db.get_cart(user_id)
@@ -97,16 +81,11 @@ async def pay_cart(callback: CallbackQuery, db: Database):
     if not cart_items:
         try:
             await callback.message.edit_text(
-                "❌ Ваша корзина пуста!\n\n"
-                "Добавьте товары перед оплатой.",
+                "❌ Ваша корзина пуста!",
                 reply_markup=InlineKeyboardMarkup(
                     inline_keyboard=[
-                        [
-                            InlineKeyboardButton(
-                                text="🛍 Перейти в каталог",
-                                callback_data=CartCallback(action='continue').pack()
-                            )
-                        ]
+                        [InlineKeyboardButton(text="🛍 Перейти в каталог", callback_data="catalog")],
+                        [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_menu")]
                     ]
                 )
             )
@@ -114,171 +93,58 @@ async def pay_cart(callback: CallbackQuery, db: Database):
             pass
         return
     
-    total_sum = sum(
-        item.get('price', 0) * item.get('count', 1) 
-        for item in cart_items
-    )
-    
-    # Здесь должна быть интеграция с платёжной системой
-    # Для примера просто показываем информацию
-    payment_text = (
-        f"💳 <b>Оплата заказа</b>\n\n"
-        f"Сумма к оплате: <b>{total_sum:.2f} ₽</b>\n\n"
-        f"🔒 Оплата через защищённое соединение.\n"
-        f"📧 После оплаты товары будут отправлены вам в личные сообщения."
-    )
-    
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="✅ Подтвердить оплату",
-                    callback_data=CartCallback(action='confirm_pay').pack()
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="❌ Отменить",
-                    callback_data=CartCallback(action='cancel_pay').pack()
-                )
-            ]
-        ]
-    )
-    
-    try:
-        await callback.message.edit_text(
-            payment_text,
-            reply_markup=keyboard,
-            parse_mode='HTML'
-        )
-    except Exception:
-        pass
-
-@router.callback_query(CartCallback.filter(F.action == 'confirm_pay'))
-async def confirm_payment(callback: CallbackQuery, db: Database):
-    await callback.answer()
-    user_id = callback.from_user.id
-    
-    # Здесь должна быть реальная обработка платежа
-    # Для примера просто очищаем корзину и показываем сообщение
-    
-    cart_items = await db.get_cart(user_id)
-    total_sum = sum(
-        item.get('price', 0) * item.get('count', 1) 
-        for item in cart_items
-    )
-    
-    await db.clear_cart(user_id)
-    
-    success_text = (
-        f"✅ <b>Оплата прошла успешно!</b>\n\n"
-        f"💵 Сумма: {total_sum:.2f} ₽\n"
-        f"🎁 Товары будут отправлены вам в ближайшее время.\n\n"
-        f"Спасибо за покупку!"
-    )
-    
-    try:
-        await callback.message.edit_text(
-            success_text,
-            reply_markup=InlineKeyboardMarkup(
-                inline_keyboard=[
-                    [
-                        InlineKeyboardButton(
-                            text="🛍 Продолжить покупки",
-                            callback_data=CartCallback(action='continue').pack()
-                        )
-                    ]
-                ]
-            ),
-            parse_mode='HTML'
-        )
-    except Exception:
-        pass
-
-@router.callback_query(CartCallback.filter(F.action == 'cancel_pay'))
-async def cancel_payment(callback: CallbackQuery, db: Database):
-    await callback.answer()
-    user_id = callback.from_user.id
-    cart_items = await db.get_cart(user_id)
-    
-    if not cart_items:
-        try:
-            await callback.message.edit_text(
-                "🛒 Ваша корзина пуста.",
-                reply_markup=InlineKeyboardMarkup(
-                    inline_keyboard=[
-                        [
-                            InlineKeyboardButton(
-                                text="🛍 Перейти в каталог",
-                                callback_data=CartCallback(action='continue').pack()
-                            )
-                        ]
-                    ]
-                )
-            )
-        except Exception:
-            pass
-        return
-    
-    cart_text = "🛒 <b>Ваша корзина:</b>\n\n"
-    total_sum = 0
+    # Создаем заказ
+    total_price = 0
+    order_items = []
     
     for item in cart_items:
-        title = item.get('title', 'Товар')
-        price = item.get('price', 0)
-        count = item.get('count', 1)
-        item_sum = price * count
-        total_sum += item_sum
-        
-        cart_text += f"📦 <b>{title}</b>\n"
-        cart_text += f"💰 Цена: {price:.2f} ₽ × {count} шт.\n"
-        cart_text += f"💵 Сумма: {item_sum:.2f} ₽\n"
-        cart_text += "➖➖➖➖➖➖➖\n"
+        product = await db.get_product(item['product_id'])
+        if product:
+            item_total = product['price'] * item['count']
+            total_price += item_total
+            order_items.append(f"{product['name']} × {item['count']} = {item_total}₽")
     
-    cart_text += f"\n<b>Итого: {total_sum:.2f} ₽</b>"
+    # Сохраняем заказ в БД
+    await db.create_order(
+        user_id=user_id,
+        items="\n".join(order_items),
+        total_price=total_price
+    )
     
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="💳 Оплатить",
-                    callback_data=CartCallback(action='pay').pack()
-                ),
-                InlineKeyboardButton(
-                    text="🗑 Очистить",
-                    callback_data=CartCallback(action='clear').pack()
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    text="🛍 Продолжить покупки",
-                    callback_data=CartCallback(action='continue').pack()
-                )
-            ]
-        ]
+    # Очищаем корзину после заказа
+    await db.clear_cart(user_id)
+    
+    order_text = (
+        "✅ <b>Заказ оформлен!</b>\n\n"
+        f"📋 <b>Состав заказа:</b>\n"
+        f"{chr(10).join(order_items)}\n\n"
+        f"💰 <b>Итого: {total_price}₽</b>\n\n"
+        "⏳ Ожидайте, администратор свяжется с вами для оплаты и получения товара."
     )
     
     try:
         await callback.message.edit_text(
-            cart_text,
-            reply_markup=keyboard,
-            parse_mode='HTML'
+            order_text,
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_menu")]
+                ]
+            )
         )
     except Exception:
         pass
 
-@router.callback_query(CartCallback.filter(F.action == 'continue'))
-async def continue_shopping(callback: CallbackQuery, db: Database):
+
+@router.callback_query(F.data == "back_to_menu")
+async def back_to_menu(callback: CallbackQuery) -> None:
+    """Вернуться в главное меню"""
     await callback.answer()
-    user_id = callback.from_user.id
-    categories = await db.get_categories()
-    
-    from keyboards import get_categories_keyboard
-    
     try:
-        await callback.message.edit_text(
-            "🛍 Выберите категорию:",
-            reply_markup=get_categories_keyboard(categories, user_id)
-        )
+        await callback.message.delete()
     except Exception:
         pass
+    
+    await callback.message.answer(
+        "🏠 Главное меню",
+        reply_markup=main_menu()
+    )

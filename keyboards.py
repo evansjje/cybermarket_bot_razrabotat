@@ -1,266 +1,144 @@
-# keyboards.py
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.filters.callback_data import CallbackData
-from typing import List, Optional
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
+from aiogram.utils.keyboard import InlineKeyboardBuilder
+from typing import List, Dict, Optional, Any
 from config import settings
 
-# Callback data factories
-class CategoryCallback(CallbackData, prefix="cat"):
-    action: str
-    cat_id: Optional[int] = None
 
-class ProductCallback(CallbackData, prefix="prod"):
-    action: str
-    product_id: Optional[int] = None
-    cat_id: Optional[int] = None
-
-class CartCallback(CallbackData, prefix="cart"):
-    action: str
-
-class AdminCallback(CallbackData, prefix="admin"):
-    action: str
-    cat_id: Optional[int] = None
-    product_id: Optional[int] = None
-
-# Main menu keyboard
-def get_main_menu(user_id: int) -> ReplyKeyboardMarkup:
-    keyboard = [
-        [KeyboardButton(text='🛍 Каталог'), KeyboardButton(text='🛒 Корзина')],
-        [KeyboardButton(text='👥 Рефералка'), KeyboardButton(text='⭐ Отзывы')],
-        [KeyboardButton(text='🆘 Поддержка')]
+def main_menu() -> ReplyKeyboardMarkup:
+    """Главное меню"""
+    buttons = [
+        [KeyboardButton(text='🛍 Каталог')],
+        [KeyboardButton(text='🛒 Корзина')],
+        [KeyboardButton(text='👥 Рефералка')],
+        [KeyboardButton(text='⭐ Отзывы')],
+        [KeyboardButton(text='🆘 Поддержка')],
     ]
     
-    if user_id in settings.ADMIN_IDS:
-        keyboard.append([KeyboardButton(text='⚡ Админ-панель')])
+    # Добавляем кнопку админ-панели для админов
+    if settings.ADMIN_IDS:
+        buttons.append([KeyboardButton(text='⚡ Админ-панель')])
     
     return ReplyKeyboardMarkup(
-        keyboard=keyboard,
-        resize_keyboard=True
+        keyboard=buttons,
+        resize_keyboard=True,
+        is_persistent=True
     )
 
-# Alias for main_menu_kb
-def main_menu_kb(user_id: int) -> ReplyKeyboardMarkup:
-    return get_main_menu(user_id)
 
-# Categories inline keyboard
-def get_categories_keyboard(categories: List[dict], user_id: int) -> InlineKeyboardMarkup:
-    buttons = []
+def categories_menu(categories: List[Dict[str, Any]]) -> InlineKeyboardMarkup:
+    """Инлайн-кнопки категорий"""
+    builder = InlineKeyboardBuilder()
     
-    for cat in categories:
-        cat_id = cat.get('id', 0)
-        title = cat.get('title', 'Без названия')
-        
-        row = [
-            InlineKeyboardButton(
-                text=title,
-                callback_data=CategoryCallback(action='view', cat_id=cat_id).pack()
-            )
-        ]
-        
-        if user_id in settings.ADMIN_IDS:
-            row.append(
-                InlineKeyboardButton(
-                    text='✏️',
-                    callback_data=AdminCallback(action='edit_cat', cat_id=cat_id).pack()
-                )
-            )
-            row.append(
-                InlineKeyboardButton(
-                    text='🗑',
-                    callback_data=AdminCallback(action='del_cat', cat_id=cat_id).pack()
-                )
-            )
-        
-        buttons.append(row)
-    
-    if user_id in settings.ADMIN_IDS:
-        buttons.append([
-            InlineKeyboardButton(
-                text='➕ Добавить категорию',
-                callback_data=AdminCallback(action='add_cat').pack()
-            )
-        ])
-    
-    buttons.append([
-        InlineKeyboardButton(
-            text='🏠 Главное меню',
-            callback_data=CategoryCallback(action='main').pack()
+    for category in categories:
+        builder.button(
+            text=category['name'],
+            callback_data=f"category_{category['id']}"
         )
-    ])
     
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
+    builder.button(text='⬅️ Назад', callback_data='back_to_menu')
+    builder.adjust(1)
+    
+    return builder.as_markup()
 
-# Products inline keyboard
-def get_products_keyboard(products: List[dict], cat_id: int, user_id: int) -> InlineKeyboardMarkup:
-    buttons = []
+
+def products_menu(products: List[Dict[str, Any]], category_id: int) -> InlineKeyboardMarkup:
+    """Инлайн-кнопки товаров категории"""
+    builder = InlineKeyboardBuilder()
     
     for product in products:
-        product_id = product.get('id', 0)
-        title = product.get('title', 'Без названия')
-        price = product.get('price', 0)
-        
-        row = [
-            InlineKeyboardButton(
-                text=f"{title} — {price}₽",
-                callback_data=ProductCallback(action='view', product_id=product_id, cat_id=cat_id).pack()
-            )
-        ]
-        
-        if user_id in settings.ADMIN_IDS:
-            row.append(
-                InlineKeyboardButton(
-                    text='✏️',
-                    callback_data=AdminCallback(action='edit_prod', product_id=product_id, cat_id=cat_id).pack()
-                )
-            )
-            row.append(
-                InlineKeyboardButton(
-                    text='🗑',
-                    callback_data=AdminCallback(action='del_prod', product_id=product_id, cat_id=cat_id).pack()
-                )
-            )
-        
-        buttons.append(row)
-    
-    if user_id in settings.ADMIN_IDS:
-        buttons.append([
-            InlineKeyboardButton(
-                text='➕ Добавить товар',
-                callback_data=AdminCallback(action='add_prod', cat_id=cat_id).pack()
-            )
-        ])
-    
-    buttons.append([
-        InlineKeyboardButton(
-            text='⬅️ Назад',
-            callback_data=CategoryCallback(action='back', cat_id=cat_id).pack()
-        ),
-        InlineKeyboardButton(
-            text='🏠 Главное меню',
-            callback_data=CategoryCallback(action='main').pack()
+        builder.button(
+            text=f"{product['name']} - {product['price']}₽",
+            callback_data=f"product_{product['id']}"
         )
-    ])
     
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
+    builder.button(text='⬅️ Назад', callback_data=f'category_{category_id}')
+    builder.button(text='🏠 Главное меню', callback_data='back_to_menu')
+    builder.adjust(1)
+    
+    return builder.as_markup()
 
-# Product detail keyboard
-def get_product_detail_keyboard(product_id: int, cat_id: int, user_id: int) -> InlineKeyboardMarkup:
-    buttons = [
-        [
-            InlineKeyboardButton(
-                text='➕ В корзину',
-                callback_data=ProductCallback(action='add', product_id=product_id, cat_id=cat_id).pack()
-            )
-        ]
-    ]
+
+def product_card(product: Dict[str, Any]) -> InlineKeyboardMarkup:
+    """Карточка товара"""
+    builder = InlineKeyboardBuilder()
     
-    if user_id in settings.ADMIN_IDS:
-        buttons.append([
-            InlineKeyboardButton(
-                text='✏️ Редактировать',
-                callback_data=AdminCallback(action='edit_prod', product_id=product_id, cat_id=cat_id).pack()
-            ),
-            InlineKeyboardButton(
-                text='🗑 Удалить',
-                callback_data=AdminCallback(action='del_prod', product_id=product_id, cat_id=cat_id).pack()
-            )
-        ])
+    builder.button(text='➕ В корзину', callback_data=f"add_to_cart_{product['id']}")
+    builder.button(text='⬅️ Назад', callback_data=f"category_{product['category_id']}")
+    builder.button(text='🏠 Главное меню', callback_data='back_to_menu')
+    builder.adjust(1)
     
-    buttons.append([
-        InlineKeyboardButton(
-            text='⬅️ Назад',
-            callback_data=CategoryCallback(action='view', cat_id=cat_id).pack()
-        ),
-        InlineKeyboardButton(
-            text='🏠 Главное меню',
-            callback_data=CategoryCallback(action='main').pack()
+    return builder.as_markup()
+
+
+def cart_menu() -> InlineKeyboardMarkup:
+    """Кнопки корзины"""
+    builder = InlineKeyboardBuilder()
+    
+    builder.button(text='🗑 Очистить корзину', callback_data='clear_cart')
+    builder.button(text='✅ Оформить заказ', callback_data='checkout')
+    builder.button(text='⬅️ Назад', callback_data='back_to_menu')
+    builder.adjust(1)
+    
+    return builder.as_markup()
+
+
+def admin_panel() -> InlineKeyboardMarkup:
+    """Инлайн-кнопки админ-панели"""
+    builder = InlineKeyboardBuilder()
+    
+    builder.button(text='📊 Статистика', callback_data='admin_stats')
+    builder.button(text='➕ Добавить категорию', callback_data='admin_add_category')
+    builder.button(text='➕ Добавить товар', callback_data='admin_add_product')
+    builder.button(text='🗑 Удалить товар', callback_data='admin_delete_product')
+    builder.button(text='⬅️ Назад', callback_data='back_to_menu')
+    builder.adjust(1)
+    
+    return builder.as_markup()
+
+
+def admin_categories(categories: List[Dict[str, Any]]) -> InlineKeyboardMarkup:
+    """Список категорий для админа"""
+    builder = InlineKeyboardBuilder()
+    
+    for category in categories:
+        builder.button(
+            text=category['name'],
+            callback_data=f"admin_cat_{category['id']}"
         )
-    ])
     
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
-
-# Cart keyboard
-def get_cart_keyboard() -> InlineKeyboardMarkup:
-    buttons = [
-        [
-            InlineKeyboardButton(
-                text='🗑 Очистить корзину',
-                callback_data=CartCallback(action='clear').pack()
-            ),
-            InlineKeyboardButton(
-                text='💳 Оплатить',
-                callback_data=CartCallback(action='pay').pack()
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                text='🛍 Продолжить покупки',
-                callback_data=CategoryCallback(action='main').pack()
-            )
-        ]
-    ]
+    builder.button(text='⬅️ Назад', callback_data='admin_panel')
+    builder.adjust(1)
     
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
+    return builder.as_markup()
 
-# Admin panel keyboard
-def get_admin_panel_keyboard() -> InlineKeyboardMarkup:
-    buttons = [
-        [
-            InlineKeyboardButton(
-                text='📊 Статистика',
-                callback_data=AdminCallback(action='stats').pack()
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                text='➕ Добавить категорию',
-                callback_data=AdminCallback(action='add_cat').pack()
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                text='🏠 Главное меню',
-                callback_data=CategoryCallback(action='main').pack()
-            )
-        ]
-    ]
+
+def admin_products(products: List[Dict[str, Any]], category_id: int) -> InlineKeyboardMarkup:
+    """Список товаров категории для админа"""
+    builder = InlineKeyboardBuilder()
     
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
-
-# Cancel keyboard for FSM
-def get_cancel_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text='❌ Отмена',
-                    callback_data=AdminCallback(action='cancel').pack()
-                )
-            ]
-        ]
-    )
-
-# Admin edit product keyboard
-def get_admin_edit_product_keyboard(product_id: int, cat_id: int) -> InlineKeyboardMarkup:
-    buttons = [
-        [
-            InlineKeyboardButton(
-                text='💰 Изменить цену',
-                callback_data=AdminCallback(action='edit_price', product_id=product_id, cat_id=cat_id).pack()
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                text='📝 Изменить описание',
-                callback_data=AdminCallback(action='edit_desc', product_id=product_id, cat_id=cat_id).pack()
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                text='⬅️ Назад',
-                callback_data=CategoryCallback(action='view', cat_id=cat_id).pack()
-            )
-        ]
-    ]
+    for product in products:
+        builder.button(
+            text=f"🗑 {product['name']}",
+            callback_data=f"admin_del_product_{product['id']}"
+        )
     
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
+    builder.button(text='⬅️ Назад', callback_data='admin_panel')
+    builder.adjust(1)
+    
+    return builder.as_markup()
+
+
+def cancel_fsm() -> InlineKeyboardMarkup:
+    """Кнопка отмены FSM"""
+    builder = InlineKeyboardBuilder()
+    builder.button(text='❌ Отмена', callback_data='cancel_fsm')
+    return builder.as_markup()
+
+
+def confirm_delete(product_id: int) -> InlineKeyboardMarkup:
+    """Подтверждение удаления товара"""
+    builder = InlineKeyboardBuilder()
+    builder.button(text='✅ Да, удалить', callback_data=f'confirm_del_{product_id}')
+    builder.button(text='❌ Нет', callback_data='admin_panel')
+    builder.adjust(1)
+    return builder.as_markup()

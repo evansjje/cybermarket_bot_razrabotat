@@ -3,20 +3,30 @@ FROM python:3.11-slim
 # Устанавливаем рабочую директорию
 WORKDIR /app
 
-# Копируем файл с зависимостями
+# Устанавливаем системные зависимости
+RUN apt-get update && apt-get install -y \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+# Копируем файлы зависимостей
 COPY requirements.txt .
 
-# Устанавливаем зависимости
+# Устанавливаем Python-зависимости
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Копируем все файлы проекта
+# Копируем исходный код проекта
 COPY . .
 
-# Создаем директорию для базы данных (если не существует)
+# Создаем директорию для базы данных
 RUN mkdir -p /app/data
 
-# Указываем переменную окружения для пути к БД (опционально)
-ENV DB_PATH=/app/data/cybermarket.db
+# Указываем переменные окружения
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    DB_PATH=/app/data/cybermarket.db
 
-# Команда запуска бота
+# Открываем порт (если нужен, для веб-хуков)
+EXPOSE 8080
+
+# Команда для запуска бота
 CMD ["python", "main.py"]
