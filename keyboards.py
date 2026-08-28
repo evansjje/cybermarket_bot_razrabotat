@@ -4,6 +4,11 @@ from typing import List, Dict, Optional, Any
 from config import settings
 
 
+def main_menu_kb() -> ReplyKeyboardMarkup:
+    """Главное меню (алиас для main_menu)"""
+    return main_menu()
+
+
 def main_menu() -> ReplyKeyboardMarkup:
     """Главное меню"""
     buttons = [
