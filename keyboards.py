@@ -38,6 +38,10 @@ def get_main_menu(user_id: int) -> ReplyKeyboardMarkup:
         resize_keyboard=True
     )
 
+# Alias for main_menu_kb
+def main_menu_kb(user_id: int) -> ReplyKeyboardMarkup:
+    return get_main_menu(user_id)
+
 # Categories inline keyboard
 def get_categories_keyboard(categories: List[dict], user_id: int) -> InlineKeyboardMarkup:
     buttons = []
