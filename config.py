@@ -1,12 +1,18 @@
+# config.py
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import field_validator
+from typing import List
 
 
 class Settings(BaseSettings):
     BOT_TOKEN: str
-    ADMIN_IDS: list[int] = []
+    ADMIN_IDS: List[int] = []
 
-    model_config = SettingsConfigDict(env_file='.env', extra='ignore')
+    model_config = SettingsConfigDict(
+        env_file='.env',
+        extra='ignore',
+        env_file_encoding='utf-8'
+    )
 
     @field_validator('ADMIN_IDS', mode='before')
     def parse_admin_ids(cls, v):

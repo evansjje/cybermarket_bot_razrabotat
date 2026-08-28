@@ -1,27 +1,26 @@
+# handlers/start.py
 from aiogram import Router, F
 from aiogram.filters import CommandStart
 from aiogram.types import Message
 from database import add_user
-from keyboards import main_menu_keyboard
+from keyboards import main_menu_kb
 
 router = Router()
 
 
 @router.message(CommandStart())
-async def cmd_start(message: Message):
+async def cmd_start(message: Message) -> None:
     """Обработчик команды /start"""
-    user_id = message.from_user.id
-    username = message.from_user.username
-    first_name = message.from_user.first_name
-    last_name = message.from_user.last_name
-
-    # Регистрация пользователя в БД
-    await add_user(user_id, username, first_name, last_name)
-
-    # Отправка главного меню
+    user = message.from_user
+    await add_user(
+        user_id=user.id,
+        username=user.username,
+        first_name=user.first_name,
+        last_name=user.last_name
+    )
     await message.answer(
-        f"👋 Добро пожаловать в CyberMarket!\n\n"
-        f"Здесь вы можете приобрести цифровые товары: скрипты, курсы и софт.\n"
-        f"Используйте кнопки ниже для навигации:",
-        reply_markup=main_menu_keyboard(user_id)
+        f"👋 Добро пожаловать, {user.first_name or 'пользователь'}!\n\n"
+        "🛍 Здесь ты можешь приобрести цифровые товары.\n"
+        "Выбери раздел в меню ниже:",
+        reply_markup=main_menu_kb(user.id)
     )
