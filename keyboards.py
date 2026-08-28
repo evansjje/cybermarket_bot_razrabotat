@@ -77,6 +77,11 @@ def admin_product_actions_kb(product_id: int) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+def admin_product_manage_kb(product_id: int) -> InlineKeyboardMarkup:
+    """Инлайн-кнопки управления товаром в админке (алиас для admin_product_actions_kb)"""
+    return admin_product_actions_kb(product_id)
+
+
 def cart_kb() -> InlineKeyboardMarkup:
     """Инлайн-кнопки корзины"""
     builder = InlineKeyboardBuilder()
