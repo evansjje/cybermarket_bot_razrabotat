@@ -128,6 +128,11 @@ async def get_all_categories() -> List[Tuple]:
         return await cursor.fetchall()
 
 
+async def get_categories() -> List[Tuple]:
+    """Get all categories (alias for get_all_categories)."""
+    return await get_all_categories()
+
+
 async def get_products_by_category(category_id: int) -> List[Tuple]:
     """Get products by category ID."""
     async with aiosqlite.connect(DB_PATH) as db:
@@ -265,3 +270,74 @@ async def add_category(name: str) -> int:
         cursor = await db.execute('INSERT INTO categories (name) VALUES (?)', (name,))
         await db.commit()
         return cursor.lastrowid
+
+
+class Database:
+    """Database wrapper class for synchronous access patterns."""
+    
+    def __init__(self, db_path: str = DB_PATH):
+        self.db_path = db_path
+    
+    async def get_categories(self) -> List[Tuple]:
+        """Get all categories."""
+        return await get_categories()
+    
+    async def get_all_categories(self) -> List[Tuple]:
+        """Get all categories."""
+        return await get_all_categories()
+    
+    async def get_products_by_category(self, category_id: int) -> List[Tuple]:
+        """Get products by category ID."""
+        return await get_products_by_category(category_id)
+    
+    async def get_product(self, product_id: int) -> Optional[Tuple]:
+        """Get product by ID."""
+        return await get_product(product_id)
+    
+    async def add_to_cart(self, user_id: int, product_id: int, count: int = 1) -> None:
+        """Add product to user's cart."""
+        await add_to_cart(user_id, product_id, count)
+    
+    async def get_cart(self, user_id: int) -> List[Tuple]:
+        """Get user's cart with product details."""
+        return await get_cart(user_id)
+    
+    async def get_cart_total(self, user_id: int) -> float:
+        """Get total price of user's cart."""
+        return await get_cart_total(user_id)
+    
+    async def clear_cart(self, user_id: int) -> None:
+        """Clear user's cart."""
+        await clear_cart(user_id)
+    
+    async def create_order(self, user_id: int, product_id: int, count: int, total_price: float) -> int:
+        """Create new order and return order ID."""
+        return await create_order(user_id, product_id, count, total_price)
+    
+    async def get_all_products(self) -> List[Tuple]:
+        """Get all products with category names."""
+        return await get_all_products()
+    
+    async def get_stats(self) -> Tuple[int, int, int]:
+        """Get statistics: users count, products count, orders count."""
+        return await get_stats()
+    
+    async def add_product(self, category_id: int, name: str, description: str, price: float) -> None:
+        """Add new product to database."""
+        await add_product(category_id, name, description, price)
+    
+    async def get_category_by_name(self, name: str) -> Optional[Tuple]:
+        """Get category by name."""
+        return await get_category_by_name(name)
+    
+    async def add_category(self, name: str) -> int:
+        """Add new category and return its ID."""
+        return await add_category(name)
+    
+    async def add_user(self, user_id: int, username: str = None, first_name: str = None, last_name: str = None, referred_by: int = None) -> None:
+        """Add new user to database."""
+        await add_user(user_id, username, first_name, last_name, referred_by)
+    
+    async def get_user(self, user_id: int) -> Optional[Tuple]:
+        """Get user by ID."""
+        return await get_user(user_id)
