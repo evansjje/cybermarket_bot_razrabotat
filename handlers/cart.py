@@ -1,150 +1,80 @@
-from aiogram import Router, types, F
-from aiogram.types import CallbackQuery, Message, InlineKeyboardMarkup, InlineKeyboardButton
+# handlers/cart.py
+from aiogram import Router, F
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from database import Database
-from keyboards import main_menu
 
 router = Router()
 
 
-@router.message(F.text == "🛒 Корзина")
+@router.message(F.text == '🛒 Корзина')
 async def show_cart(message: Message, db: Database) -> None:
-    """Показать корзину пользователя"""
+    """Показ корзины пользователя."""
     user_id = message.from_user.id
     cart_items = await db.get_cart(user_id)
-    
+
     if not cart_items:
-        await message.answer(
-            "🛒 Ваша корзина пуста!\n\n"
-            "Перейдите в каталог и добавьте товары.",
-            reply_markup=main_menu()
-        )
+        await message.answer("🛒 Ваша корзина пуста!")
         return
-    
-    # Формируем текст корзины
-    cart_text = "🛒 <b>Ваша корзина:</b>\n\n"
-    total_price = 0
-    
+
+    text = "🛒 <b>Ваша корзина:</b>\n\n"
+    total = 0
+
     for item in cart_items:
-        product = await db.get_product(item['product_id'])
-        if product:
-            item_total = product['price'] * item['count']
-            total_price += item_total
-            cart_text += (
-                f"📦 <b>{product['name']}</b>\n"
-                f"💰 {product['price']}₽ × {item['count']} = {item_total}₽\n\n"
-            )
-    
-    cart_text += f"<b>Итого: {total_price}₽</b>"
-    
-    # Создаем клавиатуру
+        title = item.get('title', 'Товар')
+        price = item.get('price', 0)
+        count = item.get('count', 1)
+        item_total = price * count
+        total += item_total
+        text += f"📦 {title}\n"
+        text += f"💰 {price}₽ x {count} = {item_total}₽\n\n"
+
+    text += f"<b>Итого: {total}₽</b>"
+
+    # Клавиатура с кнопками очистки и оплаты
     builder = InlineKeyboardBuilder()
-    builder.button(text="🧹 Очистить корзину", callback_data="clear_cart")
-    builder.button(text="✅ Оформить заказ", callback_data="checkout")
-    builder.button(text="⬅️ Назад", callback_data="back_to_menu")
+    builder.button(text="🗑 Очистить корзину", callback_data="clear_cart")
+    builder.button(text="💳 Оплатить", callback_data="pay_cart")
     builder.adjust(1)
-    
-    await message.answer(
-        cart_text,
-        reply_markup=builder.as_markup()
-    )
+
+    await message.answer(text, reply_markup=builder.as_markup())
 
 
-@router.callback_query(F.data == "clear_cart")
+@router.callback_query(F.data == 'clear_cart')
 async def clear_cart(callback: CallbackQuery, db: Database) -> None:
-    """Очистить корзину"""
+    """Очистка корзины."""
     await callback.answer()
     user_id = callback.from_user.id
     await db.clear_cart(user_id)
-    
+
     try:
-        await callback.message.edit_text(
-            "🗑 Корзина очищена!",
-            reply_markup=InlineKeyboardMarkup(
-                inline_keyboard=[
-                    [InlineKeyboardButton(text="🛍 Перейти в каталог", callback_data="catalog")],
-                    [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_menu")]
-                ]
-            )
-        )
+        await callback.message.edit_text("🗑 Корзина очищена!")
     except Exception:
         pass
 
 
-@router.callback_query(F.data == "checkout")
-async def checkout(callback: CallbackQuery, db: Database) -> None:
-    """Оформление заказа"""
+@router.callback_query(F.data == 'pay_cart')
+async def pay_cart(callback: CallbackQuery, db: Database) -> None:
+    """Оплата корзины."""
     await callback.answer()
     user_id = callback.from_user.id
     cart_items = await db.get_cart(user_id)
-    
+
     if not cart_items:
         try:
-            await callback.message.edit_text(
-                "❌ Ваша корзина пуста!",
-                reply_markup=InlineKeyboardMarkup(
-                    inline_keyboard=[
-                        [InlineKeyboardButton(text="🛍 Перейти в каталог", callback_data="catalog")],
-                        [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_menu")]
-                    ]
-                )
-            )
+            await callback.message.edit_text("🛒 Ваша корзина пуста!")
         except Exception:
             pass
         return
-    
-    # Создаем заказ
-    total_price = 0
-    order_items = []
-    
-    for item in cart_items:
-        product = await db.get_product(item['product_id'])
-        if product:
-            item_total = product['price'] * item['count']
-            total_price += item_total
-            order_items.append(f"{product['name']} × {item['count']} = {item_total}₽")
-    
-    # Сохраняем заказ в БД
-    await db.create_order(
-        user_id=user_id,
-        items="\n".join(order_items),
-        total_price=total_price
-    )
-    
-    # Очищаем корзину после заказа
-    await db.clear_cart(user_id)
-    
-    order_text = (
-        "✅ <b>Заказ оформлен!</b>\n\n"
-        f"📋 <b>Состав заказа:</b>\n"
-        f"{chr(10).join(order_items)}\n\n"
-        f"💰 <b>Итого: {total_price}₽</b>\n\n"
-        "⏳ Ожидайте, администратор свяжется с вами для оплаты и получения товара."
-    )
-    
+
+    total = sum(item.get('price', 0) * item.get('count', 1) for item in cart_items)
+
+    # Здесь можно добавить интеграцию с платёжной системой
+    # В демо-версии просто показываем сообщение об оплате
     try:
         await callback.message.edit_text(
-            order_text,
-            reply_markup=InlineKeyboardMarkup(
-                inline_keyboard=[
-                    [InlineKeyboardButton(text="🏠 Главное меню", callback_data="back_to_menu")]
-                ]
-            )
+            f"💳 Оплата на сумму {total}₽\n\n"
+            "🔗 Ссылка на оплату будет отправлена после настройки платёжной системы."
         )
     except Exception:
         pass
-
-
-@router.callback_query(F.data == "back_to_menu")
-async def back_to_menu(callback: CallbackQuery) -> None:
-    """Вернуться в главное меню"""
-    await callback.answer()
-    try:
-        await callback.message.delete()
-    except Exception:
-        pass
-    
-    await callback.message.answer(
-        "🏠 Главное меню",
-        reply_markup=main_menu()
-    )

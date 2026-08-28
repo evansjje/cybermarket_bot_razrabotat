@@ -1,35 +1,37 @@
-from aiogram import Router, types
+# handlers/start.py
+from aiogram import Router, F
 from aiogram.filters import CommandStart
 from aiogram.types import Message
 from database import Database
 from keyboards import main_menu
+from config import settings
 
 router = Router()
 
 
 @router.message(CommandStart())
 async def cmd_start(message: Message, db: Database) -> None:
-    """Обработка команды /start"""
+    """Обработчик команды /start - регистрация пользователя и показ главного меню."""
     user_id = message.from_user.id
-    username = message.from_user.username
-    first_name = message.from_user.first_name
-    last_name = message.from_user.last_name
+    username = message.from_user.username or ""
+    first_name = message.from_user.first_name or ""
 
-    # Проверяем, есть ли пользователь в БД
-    existing_user = await db.get_user(user_id)
-    if not existing_user:
-        # Создаем нового пользователя
-        await db.add_user(
-            user_id=user_id,
-            username=username,
-            first_name=first_name,
-            last_name=last_name
-        )
+    # Регистрация пользователя в БД
+    await db.db.execute(
+        """
+        INSERT OR IGNORE INTO users (user_id, username, first_name)
+        VALUES (?, ?, ?)
+        """,
+        (user_id, username, first_name)
+    )
+    await db.db.commit()
 
-    # Отправляем приветственное сообщение и главное меню
+    # Проверка, является ли пользователь админом
+    is_admin = user_id in settings.ADMIN_IDS
+
     await message.answer(
-        f"👋 Добро пожаловать, {first_name or 'пользователь'}!\n\n"
-        "🛍 Здесь вы можете приобрести цифровые товары.\n"
-        "Выберите раздел в меню ниже:",
-        reply_markup=main_menu()
+        f"👋 Добро пожаловать, {first_name}!\n"
+        "🛍 Здесь ты можешь приобрести цифровые товары.\n"
+        "Выбери действие в меню ниже:",
+        reply_markup=main_menu(is_admin=is_admin)
     )

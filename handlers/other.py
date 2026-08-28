@@ -1,128 +1,121 @@
-from aiogram import Router, types, F
-from aiogram.types import CallbackQuery, Message, InlineKeyboardMarkup, InlineKeyboardButton
+# handlers/other.py
+from aiogram import Router, F
+from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from database import Database
 from keyboards import main_menu
 from config import settings
-import random
-import string
 
 router = Router()
 
 
-def generate_referral_code(user_id: int) -> str:
-    """Генерация реферального кода"""
-    random_part = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
-    return f"{user_id}{random_part}"
-
-
-@router.message(F.text == "👥 Рефералка")
-async def referral_system(message: Message, db: Database) -> None:
-    """Реферальная система"""
+@router.message(F.text == '👥 Рефералка')
+async def referral(message: Message, db: Database) -> None:
+    """Обработчик кнопки '👥 Рефералка'."""
     user_id = message.from_user.id
-    user = await db.get_user(user_id)
+    username = message.from_user.username or ""
     
-    if not user:
-        await message.answer("❌ Пользователь не найден. Нажмите /start")
-        return
-    
-    # Генерируем реферальный код, если его нет
-    if not user.get('referral_code'):
-        referral_code = generate_referral_code(user_id)
-        await db.update_user_referral_code(user_id, referral_code)
-    else:
-        referral_code = user['referral_code']
-    
-    # Считаем количество рефералов
-    referrals_count = await db.get_referrals_count(user_id)
-    
+    # Формируем реферальную ссылку
     bot_username = (await message.bot.me()).username
-    referral_link = f"https://t.me/{bot_username}?start=ref_{referral_code}"
+    referral_link = f"https://t.me/{bot_username}?start={user_id}"
+    
+    # Получаем количество приглашенных пользователей
+    invited_count = 0
+    try:
+        async with db.db.execute(
+            "SELECT COUNT(*) as count FROM users WHERE referred_by = ?",
+            (user_id,)
+        ) as cursor:
+            row = await cursor.fetchone()
+            if row:
+                invited_count = row['count'] if isinstance(row, dict) else row[0]
+    except Exception:
+        pass
     
     text = (
-        f"👥 <b>Реферальная система</b>\n\n"
+        f"👥 <b>Реферальная программа</b>\n\n"
         f"🔗 Ваша реферальная ссылка:\n"
         f"<code>{referral_link}</code>\n\n"
-        f"📊 Приглашено пользователей: <b>{referrals_count}</b>\n\n"
-        f"Поделитесь этой ссылкой с друзьями и получайте бонусы!"
+        f"📊 Приглашено друзей: <b>{invited_count}</b>\n\n"
+        f"💰 За каждого приглашенного друга вы получаете бонусы!\n"
+        f"Поделитесь ссылкой с друзьями и получайте вознаграждения."
     )
     
-    await message.answer(text, reply_markup=main_menu())
+    # Кнопка для возврата в меню
+    builder = InlineKeyboardBuilder()
+    builder.button(text="⬅️ В меню", callback_data="back_to_menu")
+    
+    await message.answer(
+        text,
+        reply_markup=builder.as_markup(),
+        parse_mode="HTML"
+    )
 
 
-@router.message(F.text == "⭐ Отзывы")
-async def reviews(message: Message) -> None:
-    """Отзывы о магазине"""
+@router.message(F.text == '⭐ Отзывы')
+async def reviews(message: Message, db: Database) -> None:
+    """Обработчик кнопки '⭐ Отзывы'."""
     text = (
         "⭐ <b>Отзывы наших клиентов</b>\n\n"
-        "🌟 <b>Алексей</b>: «Отличный магазин! Товар пришел мгновенно, все работает. Рекомендую!»\n\n"
-        "🌟 <b>Мария</b>: «Быстрая поддержка, качественные товары. Уже не первый раз покупаю здесь!»\n\n"
-        "🌟 <b>Дмитрий</b>: «Лучший магазин цифровых товаров! Всё четко и без обмана.»\n\n"
-        "🌟 <b>Елена</b>: «Удобный интерфейс, понятные цены. Покупка заняла меньше минуты!»\n\n"
-        "🌟 <b>Игорь</b>: «Рекомендую всем! Товары соответствуют описанию, поддержка на высоте.»\n\n"
-        "Хотите оставить свой отзыв? Напишите нам в поддержку!"
+        "🌟 <b>Иван</b>: «Отличный магазин! Всё пришло мгновенно, товар качественный. Рекомендую!»\n\n"
+        "🌟 <b>Мария</b>: «Быстрая доставка, удобная оплата. Уже не первый раз покупаю здесь!»\n\n"
+        "🌟 <b>Алексей</b>: «Лучший бот для покупки цифровых товаров. Всё чётко и без проблем!»\n\n"
+        "🌟 <b>Дмитрий</b>: «Понравился сервис, всё работает отлично. Поддержка отвечает быстро!»\n\n"
+        "🌟 <b>Елена</b>: «Заказывала несколько товаров, всё пришло в течение минуты. Спасибо!»\n\n"
+        "💬 Хотите оставить отзыв? Напишите нам в поддержку!"
     )
     
-    await message.answer(text, reply_markup=main_menu())
+    # Кнопка для возврата в меню
+    builder = InlineKeyboardBuilder()
+    builder.button(text="⬅️ В меню", callback_data="back_to_menu")
+    
+    await message.answer(
+        text,
+        reply_markup=builder.as_markup(),
+        parse_mode="HTML"
+    )
 
 
-@router.message(F.text == "🆘 Поддержка")
-async def support(message: Message) -> None:
-    """Контакты поддержки"""
+@router.message(F.text == '🆘 Поддержка')
+async def support(message: Message, db: Database) -> None:
+    """Обработчик кнопки '🆘 Поддержка'."""
     text = (
         "🆘 <b>Поддержка</b>\n\n"
-        "Если у вас возникли вопросы или проблемы, вы можете связаться с нами:\n\n"
-        "📧 Email: support@cybermarket.com\n"
-        "💬 Telegram: @CyberMarketSupport\n"
-        "🕐 Время работы: 24/7\n\n"
-        "Мы ответим вам в ближайшее время!"
+        "Если у вас возникли вопросы или проблемы, вы можете:\n\n"
+        "1️⃣ Написать в нашу службу поддержки\n"
+        "2️⃣ Описать вашу проблему подробно\n"
+        "3️⃣ Ожидать ответа в течение 5-10 минут\n\n"
+        "📧 <b>Контакты:</b>\n"
+        "• Email: support@cybermarket.com\n"
+        "• Telegram: @CyberMarketSupport\n\n"
+        "⏰ <b>Время работы:</b>\n"
+        "• Ежедневно с 9:00 до 21:00 (МСК)"
     )
     
-    await message.answer(text, reply_markup=main_menu())
-
-
-@router.message(F.text.startswith("/start ref_"))
-async def referral_start(message: Message, db: Database) -> None:
-    """Обработка перехода по реферальной ссылке"""
-    user_id = message.from_user.id
-    username = message.from_user.username
-    first_name = message.from_user.first_name
-    last_name = message.from_user.last_name
+    # Кнопка для возврата в меню
+    builder = InlineKeyboardBuilder()
+    builder.button(text="⬅️ В меню", callback_data="back_to_menu")
     
-    # Получаем реферальный код из команды
-    referral_code = message.text.split("ref_")[1]
-    
-    # Ищем пользователя, который пригласил
-    referrer = await db.get_user_by_referral_code(referral_code)
-    
-    # Проверяем, есть ли пользователь в БД
-    existing_user = await db.get_user(user_id)
-    if not existing_user:
-        # Создаем нового пользователя с реферальным кодом
-        await db.add_user(
-            user_id=user_id,
-            username=username,
-            first_name=first_name,
-            last_name=last_name,
-            referred_by=referrer['id'] if referrer else None
-        )
-        
-        # Генерируем собственный реферальный код
-        new_referral_code = generate_referral_code(user_id)
-        await db.update_user_referral_code(user_id, new_referral_code)
-        
-        if referrer:
-            await message.answer(
-                f"🎉 Вы перешли по реферальной ссылке!\n"
-                f"Вам начислен бонус за регистрацию!"
-            )
-    else:
-        await message.answer("👋 С возвращением!")
-    
-    # Отправляем приветственное сообщение и главное меню
     await message.answer(
-        f"👋 Добро пожаловать, {first_name or 'пользователь'}!\n\n"
-        "🛍 Здесь вы можете приобрести цифровые товары.\n"
-        "Выберите раздел в меню ниже:",
-        reply_markup=main_menu()
+        text,
+        reply_markup=builder.as_markup(),
+        parse_mode="HTML"
     )
+
+
+@router.callback_query(F.data == 'back_to_menu')
+async def back_to_menu(callback: CallbackQuery, db: Database) -> None:
+    """Обработчик кнопки '⬅️ В меню'."""
+    await callback.answer()
+    
+    user_id = callback.from_user.id
+    is_admin = user_id in settings.ADMIN_IDS
+    
+    try:
+        await callback.message.edit_text(
+            "👋 Вы вернулись в главное меню!\n"
+            "Выберите действие:",
+            reply_markup=main_menu(is_admin=is_admin)
+        )
+    except Exception:
+        pass

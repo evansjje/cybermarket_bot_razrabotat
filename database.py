@@ -1,333 +1,232 @@
+# database.py
 import aiosqlite
-from typing import List, Dict, Optional, Any
-from config import settings
-
-DB_PATH = 'cybermarket.db'
+from typing import List, Optional, Dict, Any
 
 
 class Database:
-    def __init__(self, db_path: str = DB_PATH):
+    def __init__(self, db_path: str = "cybermarket.db"):
         self.db_path = db_path
         self.db: Optional[aiosqlite.Connection] = None
 
     async def connect(self) -> None:
-        """Подключение к базе данных и создание таблиц"""
+        """Establish database connection and initialize schema."""
         self.db = await aiosqlite.connect(self.db_path)
         self.db.row_factory = aiosqlite.Row
         await self._create_tables()
         await self._seed_data()
 
-    async def close(self) -> None:
-        """Закрытие соединения с базой данных"""
-        if self.db:
-            await self.db.close()
-
     async def _create_tables(self) -> None:
-        """Создание всех таблиц"""
-        await self.db.executescript('''
-            CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY,
-                username TEXT,
-                first_name TEXT,
-                last_name TEXT,
-                referral_code TEXT,
-                referred_by INTEGER,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-
+        """Create all necessary tables if they don't exist."""
+        await self.db.execute("""
             CREATE TABLE IF NOT EXISTS categories (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL UNIQUE,
-                description TEXT
-            );
-
+                title TEXT NOT NULL UNIQUE
+            )
+        """)
+        await self.db.execute("""
             CREATE TABLE IF NOT EXISTS products (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 category_id INTEGER NOT NULL,
-                name TEXT NOT NULL,
-                description TEXT,
-                price REAL NOT NULL,
+                title TEXT NOT NULL,
+                desc TEXT DEFAULT '',
+                price REAL NOT NULL DEFAULT 0,
                 FOREIGN KEY (category_id) REFERENCES categories (id)
-            );
-
+            )
+        """)
+        await self.db.execute("""
             CREATE TABLE IF NOT EXISTS cart (
-                user_id INTEGER NOT NULL,
-                product_id INTEGER NOT NULL,
-                count INTEGER DEFAULT 1,
-                PRIMARY KEY (user_id, product_id),
-                FOREIGN KEY (user_id) REFERENCES users (id),
-                FOREIGN KEY (product_id) REFERENCES products (id)
-            );
-
-            CREATE TABLE IF NOT EXISTS orders (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
-                total_price REAL NOT NULL,
-                status TEXT DEFAULT 'pending',
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (user_id) REFERENCES users (id)
-            );
-
-            CREATE TABLE IF NOT EXISTS order_items (
-                order_id INTEGER NOT NULL,
                 product_id INTEGER NOT NULL,
-                count INTEGER NOT NULL,
-                price REAL NOT NULL,
-                FOREIGN KEY (order_id) REFERENCES orders (id),
+                count INTEGER NOT NULL DEFAULT 1,
                 FOREIGN KEY (product_id) REFERENCES products (id)
-            );
-        ''')
+            )
+        """)
+        await self.db.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                user_id INTEGER PRIMARY KEY,
+                username TEXT,
+                first_name TEXT,
+                last_name TEXT,
+                registered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
         await self.db.commit()
 
     async def _seed_data(self) -> None:
-        """Авто-заполнение демо-данными"""
-        # Проверяем, есть ли уже категории
-        cursor = await self.db.execute('SELECT COUNT(*) FROM categories')
+        """Populate database with initial categories and products."""
+        # Check if categories exist
+        cursor = await self.db.execute("SELECT COUNT(*) FROM categories")
         count = (await cursor.fetchone())[0]
-        if count > 0:
-            return
-
-        # Демо-категории
-        categories = [
-            ('🎮 Игры', 'Цифровые версии популярных игр'),
-            ('💻 Софт', 'Лицензионное программное обеспечение'),
-            ('🎬 Медиа', 'Фильмы, сериалы и музыка')
-        ]
-
-        for name, desc in categories:
-            await self.db.execute(
-                'INSERT INTO categories (name, description) VALUES (?, ?)',
-                (name, desc)
+        if count == 0:
+            categories = [
+                ("🎮 Игры",),
+                ("💻 ПО",),
+                ("🎁 Подарки",)
+            ]
+            await self.db.executemany(
+                "INSERT INTO categories (title) VALUES (?)", categories
             )
+            await self.db.commit()
 
-        # Демо-товары
-        products = [
-            (1, 'Cyberpunk 2077', 'Цифровая версия игры для PC', 1999.0),
-            (1, 'Elden Ring', 'Цифровая версия игры для PC', 2499.0),
-            (2, 'Windows 11 Pro', 'Лицензионная ОС с ключом активации', 2999.0),
-            (3, 'Netflix Premium 1 мес', 'Подписка на месяц', 499.0)
-        ]
+            # Get category IDs
+            cursor = await self.db.execute("SELECT id FROM categories")
+            cat_ids = [row[0] for row in await cursor.fetchall()]
 
-        for cat_id, name, desc, price in products:
-            await self.db.execute(
-                'INSERT INTO products (category_id, name, description, price) VALUES (?, ?, ?, ?)',
-                (cat_id, name, desc, price)
+            products = [
+                (cat_ids[0], "Steam Gift Card $50", "Цифровая карта пополнения Steam на $50", 3500),
+                (cat_ids[0], "Xbox Game Pass Ultimate 1 месяц", "Подписка Xbox Game Pass Ultimate на 1 месяц", 1200),
+                (cat_ids[1], "Windows 11 Pro Key", "Лицензионный ключ активации Windows 11 Pro", 1500),
+                (cat_ids[2], "Discord Nitro 1 месяц", "Подписка Discord Nitro на 1 месяц", 800),
+            ]
+            await self.db.executemany(
+                """INSERT INTO products (category_id, title, desc, price) 
+                   VALUES (?, ?, ?, ?)""",
+                products
             )
-
-        await self.db.commit()
-
-    # ==================== USERS ====================
-
-    async def add_user(self, user_id: int, username: str = None, first_name: str = None,
-                       last_name: str = None, referred_by: int = None) -> None:
-        """Добавление нового пользователя"""
-        referral_code = f'REF{user_id}'
-        await self.db.execute('''
-            INSERT OR IGNORE INTO users (id, username, first_name, last_name, referral_code, referred_by)
-            VALUES (?, ?, ?, ?, ?, ?)
-        ''', (user_id, username, first_name, last_name, referral_code, referred_by))
-        await self.db.commit()
-
-    async def get_user(self, user_id: int) -> Optional[Dict[str, Any]]:
-        """Получение пользователя по ID"""
-        cursor = await self.db.execute('SELECT * FROM users WHERE id = ?', (user_id,))
-        row = await cursor.fetchone()
-        return dict(row) if row else None
-
-    async def get_all_users(self) -> List[Dict[str, Any]]:
-        """Получение всех пользователей"""
-        cursor = await self.db.execute('SELECT * FROM users')
-        rows = await cursor.fetchall()
-        return [dict(r) for r in rows]
-
-    async def get_user_by_referral(self, referral_code: str) -> Optional[Dict[str, Any]]:
-        """Получение пользователя по реферальному коду"""
-        cursor = await self.db.execute('SELECT * FROM users WHERE referral_code = ?', (referral_code,))
-        row = await cursor.fetchone()
-        return dict(row) if row else None
-
-    # ==================== CATEGORIES ====================
+            await self.db.commit()
 
     async def get_categories(self) -> List[Dict[str, Any]]:
-        """Получение всех категорий"""
-        cursor = await self.db.execute('SELECT * FROM categories')
+        """Get all categories."""
+        cursor = await self.db.execute("SELECT * FROM categories ORDER BY id")
         rows = await cursor.fetchall()
         return [dict(r) for r in rows]
 
-    async def get_category(self, category_id: int) -> Optional[Dict[str, Any]]:
-        """Получение категории по ID"""
-        cursor = await self.db.execute('SELECT * FROM categories WHERE id = ?', (category_id,))
-        row = await cursor.fetchone()
-        return dict(row) if row else None
-
-    async def add_category(self, name: str, description: str = None) -> int:
-        """Добавление новой категории"""
+    async def add_category(self, title: str) -> int:
+        """Add a new category and return its ID."""
         cursor = await self.db.execute(
-            'INSERT INTO categories (name, description) VALUES (?, ?)',
-            (name, description)
+            "INSERT INTO categories (title) VALUES (?)", (title,)
         )
         await self.db.commit()
         return cursor.lastrowid
 
-    async def delete_category(self, category_id: int) -> None:
-        """Удаление категории"""
-        await self.db.execute('DELETE FROM categories WHERE id = ?', (category_id,))
-        await self.db.commit()
-
-    # ==================== PRODUCTS ====================
-
-    async def get_products_by_category(self, category_id: int) -> List[Dict[str, Any]]:
-        """Получение товаров по категории"""
-        cursor = await self.db.execute(
-            'SELECT * FROM products WHERE category_id = ?',
-            (category_id,)
-        )
+    async def get_products(self, category_id: Optional[int] = None) -> List[Dict[str, Any]]:
+        """Get products, optionally filtered by category."""
+        if category_id is not None:
+            cursor = await self.db.execute(
+                "SELECT * FROM products WHERE category_id = ? ORDER BY id",
+                (category_id,)
+            )
+        else:
+            cursor = await self.db.execute("SELECT * FROM products ORDER BY id")
         rows = await cursor.fetchall()
         return [dict(r) for r in rows]
 
-    async def get_product(self, product_id: int) -> Optional[Dict[str, Any]]:
-        """Получение товара по ID"""
-        cursor = await self.db.execute('SELECT * FROM products WHERE id = ?', (product_id,))
+    async def get_product_by_id(self, product_id: int) -> Optional[Dict[str, Any]]:
+        """Get a single product by ID."""
+        cursor = await self.db.execute(
+            "SELECT * FROM products WHERE id = ?", (product_id,)
+        )
         row = await cursor.fetchone()
         return dict(row) if row else None
 
-    async def add_product(self, category_id: int, name: str, description: str, price: float) -> int:
-        """Добавление нового товара"""
+    async def add_product(self, category_id: int, title: str, desc: str, price: float) -> int:
+        """Add a new product and return its ID."""
         cursor = await self.db.execute(
-            'INSERT INTO products (category_id, name, description, price) VALUES (?, ?, ?, ?)',
-            (category_id, name, description, price)
+            """INSERT INTO products (category_id, title, desc, price) 
+               VALUES (?, ?, ?, ?)""",
+            (category_id, title, desc, price)
         )
         await self.db.commit()
         return cursor.lastrowid
+
+    async def update_product_price(self, product_id: int, price: float) -> None:
+        """Update product price."""
+        await self.db.execute(
+            "UPDATE products SET price = ? WHERE id = ?", (price, product_id)
+        )
+        await self.db.commit()
+
+    async def update_product_desc(self, product_id: int, desc: str) -> None:
+        """Update product description."""
+        await self.db.execute(
+            "UPDATE products SET desc = ? WHERE id = ?", (desc, product_id)
+        )
+        await self.db.commit()
 
     async def delete_product(self, product_id: int) -> None:
-        """Удаление товара"""
-        await self.db.execute('DELETE FROM products WHERE id = ?', (product_id,))
+        """Delete a product and its cart entries."""
+        await self.db.execute(
+            "DELETE FROM cart WHERE product_id = ?", (product_id,)
+        )
+        await self.db.execute(
+            "DELETE FROM products WHERE id = ?", (product_id,)
+        )
         await self.db.commit()
 
-    async def get_all_products(self) -> List[Dict[str, Any]]:
-        """Получение всех товаров"""
-        cursor = await self.db.execute('SELECT * FROM products')
-        rows = await cursor.fetchall()
-        return [dict(r) for r in rows]
-
-    # ==================== CART ====================
-
-    async def add_to_cart(self, user_id: int, product_id: int, count: int = 1) -> None:
-        """Добавление товара в корзину"""
-        await self.db.execute('''
-            INSERT INTO cart (user_id, product_id, count)
-            VALUES (?, ?, ?)
-            ON CONFLICT(user_id, product_id) 
-            DO UPDATE SET count = count + excluded.count
-        ''', (user_id, product_id, count))
+    async def add_to_cart(self, user_id: int, product_id: int) -> None:
+        """Add a product to user's cart."""
+        cursor = await self.db.execute(
+            """SELECT id, count FROM cart 
+               WHERE user_id = ? AND product_id = ?""",
+            (user_id, product_id)
+        )
+        row = await cursor.fetchone()
+        if row:
+            await self.db.execute(
+                "UPDATE cart SET count = count + 1 WHERE id = ?", (row["id"],)
+            )
+        else:
+            await self.db.execute(
+                """INSERT INTO cart (user_id, product_id, count) 
+                   VALUES (?, ?, 1)""",
+                (user_id, product_id)
+            )
         await self.db.commit()
 
     async def get_cart(self, user_id: int) -> List[Dict[str, Any]]:
-        """Получение корзины пользователя"""
-        cursor = await self.db.execute('''
-            SELECT c.*, p.name, p.price, p.description
-            FROM cart c
-            JOIN products p ON c.product_id = p.id
-            WHERE c.user_id = ?
-        ''', (user_id,))
+        """Get user's cart with product details."""
+        cursor = await self.db.execute(
+            """SELECT p.id, p.title, p.price, c.count 
+               FROM cart c 
+               JOIN products p ON c.product_id = p.id 
+               WHERE c.user_id = ?""",
+            (user_id,)
+        )
         rows = await cursor.fetchall()
         return [dict(r) for r in rows]
 
     async def clear_cart(self, user_id: int) -> None:
-        """Очистка корзины пользователя"""
-        await self.db.execute('DELETE FROM cart WHERE user_id = ?', (user_id,))
+        """Clear user's cart."""
+        await self.db.execute("DELETE FROM cart WHERE user_id = ?", (user_id,))
         await self.db.commit()
 
-    async def remove_from_cart(self, user_id: int, product_id: int) -> None:
-        """Удаление товара из корзины"""
+    async def get_stats(self) -> Dict[str, Any]:
+        """Get statistics for admin panel."""
+        cursor = await self.db.execute("SELECT COUNT(*) FROM users")
+        users_count = (await cursor.fetchone())[0]
+
+        cursor = await self.db.execute("SELECT COUNT(*) FROM products")
+        products_count = (await cursor.fetchone())[0]
+
+        cursor = await self.db.execute("SELECT COUNT(*) FROM categories")
+        categories_count = (await cursor.fetchone())[0]
+
+        cursor = await self.db.execute("SELECT COUNT(*) FROM cart")
+        cart_items = (await cursor.fetchone())[0]
+
+        return {
+            "users": users_count,
+            "products": products_count,
+            "categories": categories_count,
+            "cart_items": cart_items
+        }
+
+    async def register_user(self, user_id: int, username: str = None, 
+                           first_name: str = None, last_name: str = None) -> None:
+        """Register a new user or update existing."""
         await self.db.execute(
-            'DELETE FROM cart WHERE user_id = ? AND product_id = ?',
-            (user_id, product_id)
+            """INSERT OR REPLACE INTO users (user_id, username, first_name, last_name) 
+               VALUES (?, ?, ?, ?)""",
+            (user_id, username, first_name, last_name)
         )
         await self.db.commit()
 
-    async def get_cart_total(self, user_id: int) -> float:
-        """Получение общей суммы корзины"""
-        cursor = await self.db.execute('''
-            SELECT SUM(c.count * p.price) as total
-            FROM cart c
-            JOIN products p ON c.product_id = p.id
-            WHERE c.user_id = ?
-        ''', (user_id,))
-        row = await cursor.fetchone()
-        return row['total'] if row and row['total'] else 0.0
-
-    # ==================== ORDERS ====================
-
-    async def create_order(self, user_id: int, total_price: float) -> int:
-        """Создание нового заказа"""
-        cursor = await self.db.execute(
-            'INSERT INTO orders (user_id, total_price) VALUES (?, ?)',
-            (user_id, total_price)
-        )
-        await self.db.commit()
-        return cursor.lastrowid
-
-    async def add_order_item(self, order_id: int, product_id: int, count: int, price: float) -> None:
-        """Добавление товара в заказ"""
-        await self.db.execute('''
-            INSERT INTO order_items (order_id, product_id, count, price)
-            VALUES (?, ?, ?, ?)
-        ''', (order_id, product_id, count, price))
-        await self.db.commit()
-
-    async def get_orders(self, user_id: int = None) -> List[Dict[str, Any]]:
-        """Получение заказов"""
-        if user_id:
-            cursor = await self.db.execute(
-                'SELECT * FROM orders WHERE user_id = ? ORDER BY created_at DESC',
-                (user_id,)
-            )
-        else:
-            cursor = await self.db.execute('SELECT * FROM orders ORDER BY created_at DESC')
-        rows = await cursor.fetchall()
-        return [dict(r) for r in rows]
-
-    async def get_order_items(self, order_id: int) -> List[Dict[str, Any]]:
-        """Получение товаров заказа"""
-        cursor = await self.db.execute('''
-            SELECT oi.*, p.name
-            FROM order_items oi
-            JOIN products p ON oi.product_id = p.id
-            WHERE oi.order_id = ?
-        ''', (order_id,))
-        rows = await cursor.fetchall()
-        return [dict(r) for r in rows]
-
-    # ==================== STATISTICS ====================
-
-    async def get_statistics(self) -> Dict[str, Any]:
-        """Получение статистики для админ-панели"""
-        stats = {}
-
-        cursor = await self.db.execute('SELECT COUNT(*) as count FROM users')
-        row = await cursor.fetchone()
-        stats['users'] = row['count']
-
-        cursor = await self.db.execute('SELECT COUNT(*) as count FROM categories')
-        row = await cursor.fetchone()
-        stats['categories'] = row['count']
-
-        cursor = await self.db.execute('SELECT COUNT(*) as count FROM products')
-        row = await cursor.fetchone()
-        stats['products'] = row['count']
-
-        cursor = await self.db.execute('SELECT COUNT(*) as count FROM orders')
-        row = await cursor.fetchone()
-        stats['orders'] = row['count']
-
-        cursor = await self.db.execute('SELECT COALESCE(SUM(total_price), 0) as total FROM orders')
-        row = await cursor.fetchone()
-        stats['revenue'] = row['total']
-
-        return stats
+    async def close(self) -> None:
+        """Close database connection."""
+        if self.db:
+            await self.db.close()
 
 
-# Создаем глобальный экземпляр базы данных
+# Global database instance
 db = Database()
