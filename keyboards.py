@@ -94,3 +94,8 @@ def back_to_menu_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text='⬅️ Назад', callback_data="back_to_menu")
     return builder.as_markup()
+
+
+def main_menu_kb() -> ReplyKeyboardMarkup:
+    """Алиас для главного меню (без аргументов)"""
+    return main_menu(is_admin=False)
