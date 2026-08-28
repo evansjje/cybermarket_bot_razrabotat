@@ -4,6 +4,56 @@ import os
 DB_PATH = os.path.join(os.path.dirname(__file__), 'cybermarket.db')
 
 
+class Database:
+    def __init__(self, db_path: str = DB_PATH):
+        self.db_path = db_path
+
+    async def get_user_cart_total(self, user_id: int):
+        return await get_user_cart_total(user_id)
+
+    async def get_product_by_id(self, product_id: int):
+        return await get_product_by_id(product_id)
+
+    async def get_categories(self):
+        return await get_categories()
+
+    async def get_products_by_category(self, category_id: int):
+        return await get_products_by_category(category_id)
+
+    async def get_product(self, product_id: int):
+        return await get_product(product_id)
+
+    async def add_to_cart(self, user_id: int, product_id: int, count: int = 1):
+        return await add_to_cart(user_id, product_id, count)
+
+    async def get_cart(self, user_id: int):
+        return await get_cart(user_id)
+
+    async def clear_cart(self, user_id: int):
+        return await clear_cart(user_id)
+
+    async def get_cart_total(self, user_id: int):
+        return await get_cart_total(user_id)
+
+    async def create_order(self, user_id: int, total: float):
+        return await create_order(user_id, total)
+
+    async def get_all_products(self):
+        return await get_all_products()
+
+    async def delete_product(self, product_id: int):
+        return await delete_product(product_id)
+
+    async def get_stats(self):
+        return await get_stats()
+
+    async def add_user(self, user_id: int, username: str = None, first_name: str = None, last_name: str = None):
+        return await add_user(user_id, username, first_name, last_name)
+
+    async def get_user(self, user_id: int):
+        return await get_user(user_id)
+
+
 async def init_db():
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
@@ -124,6 +174,10 @@ async def get_product(product_id: int):
         return dict(row) if row else None
 
 
+async def get_product_by_id(product_id: int):
+    return await get_product(product_id)
+
+
 async def add_to_cart(user_id: int, product_id: int, count: int = 1):
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
@@ -174,6 +228,10 @@ async def get_cart_total(user_id: int):
         ''', (user_id,))
         row = await cursor.fetchone()
         return row['total'] if row and row['total'] else 0.0
+
+
+async def get_user_cart_total(user_id: int):
+    return await get_cart_total(user_id)
 
 
 async def create_order(user_id: int, total: float):
