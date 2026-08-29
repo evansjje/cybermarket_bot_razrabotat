@@ -12,11 +12,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Копируем все файлы проекта
 COPY . .
 
-# Создаем директорию для базы данных (если нужно)
-RUN mkdir -p /app/data
+# Создаем том для базы данных
+VOLUME ["/app/data"]
 
 # Указываем переменную окружения для пути к БД
-ENV DATABASE_PATH=/app/data/cybermarket.db
+ENV DB_PATH=/app/data/cybermarket.db
 
-# Запускаем бота
+# Команда для запуска бота
 CMD ["python", "main.py"]

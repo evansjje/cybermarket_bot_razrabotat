@@ -2,7 +2,8 @@
 import asyncio
 import logging
 from aiogram import Bot, Dispatcher
-from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.client.default import DefaultBotProperties
+from aiogram.enums import ParseMode
 
 from config import settings
 from database import Database
@@ -12,13 +13,16 @@ logging.basicConfig(level=logging.INFO)
 
 
 async def main():
-    bot = Bot(token=settings.BOT_TOKEN)
-    dp = Dispatcher(storage=MemoryStorage())
+    bot = Bot(
+        token=settings.BOT_TOKEN,
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML)
+    )
+    dp = Dispatcher()
 
     db = Database()
     await db.connect()
 
-    dp["db"] = db
+    dp.workflow_data['db'] = db
 
     dp.include_router(start.router)
     dp.include_router(catalog.router)
@@ -29,8 +33,9 @@ async def main():
     try:
         await dp.start_polling(bot)
     finally:
-        await db.close()
+        await db.db.close()
+        await bot.session.close()
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     asyncio.run(main())
