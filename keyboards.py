@@ -98,3 +98,22 @@ def back_to_menu_keyboard() -> InlineKeyboardMarkup:
     """Кнопка возврата в меню"""
     buttons = [[InlineKeyboardButton(text='⬅️ Назад', callback_data='back_to_menu')]]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def products_admin_keyboard(products: List[Dict]) -> InlineKeyboardMarkup:
+    """Инлайн-клавиатура для администрирования товаров"""
+    buttons = []
+    for prod in products:
+        buttons.append([
+            InlineKeyboardButton(text=f"✏️ {prod['title']}", callback_data=f"edit_price_{prod['id']}"),
+            InlineKeyboardButton(text='📝', callback_data=f"edit_desc_{prod['id']}"),
+            InlineKeyboardButton(text='🗑', callback_data=f"del_prod_{prod['id']}")
+        ])
+    buttons.append([InlineKeyboardButton(text='➕ Добавить товар', callback_data='add_product')])
+    buttons.append([InlineKeyboardButton(text='⬅️ Назад', callback_data='back_to_admin')])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def main_menu_kb(is_admin: bool = False) -> ReplyKeyboardMarkup:
+    """Главное меню (алиас для main_menu)"""
+    return main_menu(is_admin=is_admin)
