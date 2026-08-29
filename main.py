@@ -1,11 +1,14 @@
 # main.py
 import asyncio
 import logging
+
 from aiogram import Bot, Dispatcher
-from aiogram.client.default import DefaultBotProperties
-from aiogram.enums import ParseMode
+from aiogram.fsm.storage.memory import MemoryStorage
+
 from config import settings
 from database import Database
+
+# Импортируем роутеры
 from handlers import start, catalog, cart, admin, other
 
 # Настройка логирования
@@ -13,37 +16,33 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-async def main() -> None:
-    """Точка входа в приложение."""
+async def main():
+    """Точка входа в бота"""
+    # Инициализация бота и диспетчера
+    bot = Bot(token=settings.BOT_TOKEN)
+    storage = MemoryStorage()
+    dp = Dispatcher(storage=storage)
+
     # Инициализация базы данных
     db = Database()
     await db.connect()
-    logger.info("База данных подключена и инициализирована")
 
-    # Инициализация бота и диспетчера
-    bot = Bot(
-        token=settings.BOT_TOKEN,
-        default=DefaultBotProperties(parse_mode=ParseMode.HTML)
-    )
-    dp = Dispatcher()
-
-    # Регистрация роутеров
+    # Регистрируем роутеры
     dp.include_router(start.router)
     dp.include_router(catalog.router)
     dp.include_router(cart.router)
     dp.include_router(admin.router)
     dp.include_router(other.router)
 
-    # Передача db в контекст для всех хэндлеров
-    dp["db"] = db
+    # Передаем db в хендлеры через middleware или глобально
+    dp.workflow_data['db'] = db
 
-    logger.info("Бот запущен и готов к работе")
-    
     # Запуск поллинга
+    logger.info("Бот запущен!")
     try:
         await dp.start_polling(bot)
     finally:
-        await db.db.close()
+        await db.conn.close()
         await bot.session.close()
 
 

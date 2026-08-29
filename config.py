@@ -5,10 +5,10 @@ from typing import List
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file='.env', extra='ignore')
-
     BOT_TOKEN: str
     ADMIN_IDS: List[int] = []
+
+    model_config = SettingsConfigDict(env_file='.env', extra='ignore')
 
     @field_validator('ADMIN_IDS', mode='before')
     @classmethod
