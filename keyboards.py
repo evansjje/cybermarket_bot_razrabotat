@@ -2,7 +2,7 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMar
 from typing import List, Dict, Any
 
 
-def main_menu(is_admin: bool = False) -> ReplyKeyboardMarkup:
+def main_menu_kb(is_admin: bool = False) -> ReplyKeyboardMarkup:
     """Главное меню"""
     buttons = [
         [KeyboardButton(text='🛍 Каталог')],
@@ -12,6 +12,11 @@ def main_menu(is_admin: bool = False) -> ReplyKeyboardMarkup:
     if is_admin:
         buttons.append([KeyboardButton(text='⚡ Админ-панель')])
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
+
+
+def main_menu(is_admin: bool = False) -> ReplyKeyboardMarkup:
+    """Главное меню (алиас для main_menu_kb)"""
+    return main_menu_kb(is_admin)
 
 
 def admin_menu() -> ReplyKeyboardMarkup:
