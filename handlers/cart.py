@@ -1,19 +1,15 @@
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.fsm.context import FSMContext
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-
 from database import Database
-from keyboards import main_menu
 
 router = Router()
 db = Database()
 
 
 @router.message(F.text == '🛒 Корзина')
-async def show_cart(message: Message, state: FSMContext):
-    await state.clear()
-    
+async def show_cart(message: Message):
+    """Показать корзину пользователя"""
     user_id = message.from_user.id
     cart_items = await db.get_cart(user_id)
     
@@ -22,32 +18,32 @@ async def show_cart(message: Message, state: FSMContext):
         return
     
     total_sum = 0
-    text = "🛒 Ваша корзина:\n\n"
+    text = "🛒 <b>Ваша корзина:</b>\n\n"
     
     for item in cart_items:
         product = await db.get_product_by_id(item['product_id'])
         if product:
             item_total = product['price'] * item['count']
             total_sum += item_total
-            text += f"📦 {product['name']}\n"
-            text += f"💰 Цена: {product['price']} ₽ x {item['count']} = {item_total} ₽\n\n"
+            text += (
+                f"📦 <b>{product['name']}</b>\n"
+                f"💰 {product['price']} ₽ x {item['count']} = {item_total} ₽\n\n"
+            )
     
-    text += f"💎 Итого: {total_sum} ₽"
+    text += f"<b>Итого: {total_sum} ₽</b>"
     
-    # Создаем инлайн-клавиатуру для корзины
-    builder = InlineKeyboardBuilder()
-    builder.row(
-        InlineKeyboardButton(text='🗑 Очистить корзину', callback_data='clear_cart'),
-        InlineKeyboardButton(text='✅ Оформить заказ', callback_data='checkout')
-    )
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text='✅ Оформить заказ', callback_data='checkout')],
+        [InlineKeyboardButton(text='🗑 Очистить корзину', callback_data='clear_cart')]
+    ])
     
-    await message.answer(text, reply_markup=builder.as_markup())
+    await message.answer(text, reply_markup=kb)
 
 
 @router.callback_query(F.data == 'clear_cart')
 async def clear_cart(callback: CallbackQuery):
+    """Очистить корзину"""
     await callback.answer()
-    
     user_id = callback.from_user.id
     await db.clear_cart(user_id)
     
@@ -59,40 +55,37 @@ async def clear_cart(callback: CallbackQuery):
 
 @router.callback_query(F.data == 'checkout')
 async def checkout(callback: CallbackQuery):
+    """Оформить заказ"""
     await callback.answer()
-    
     user_id = callback.from_user.id
     cart_items = await db.get_cart(user_id)
     
     if not cart_items:
-        try:
-            await callback.message.edit_text("🛒 Ваша корзина пуста!")
-        except Exception:
-            pass
+        await callback.answer("❌ Корзина пуста!", show_alert=True)
         return
     
-    # Создаем заказ
     total_sum = 0
     for item in cart_items:
         product = await db.get_product_by_id(item['product_id'])
         if product:
             total_sum += product['price'] * item['count']
     
-    # Сохраняем заказ в БД
+    # Создаем заказ
     await db.db.execute(
-        "INSERT INTO orders (user_id, total_amount, status) VALUES (?, ?, ?)",
-        (user_id, total_sum, 'pending')
+        """INSERT INTO orders (user_id, total_amount, status) 
+           VALUES (?, ?, 'pending')""",
+        (user_id, total_sum)
     )
     await db.db.commit()
     
-    # Очищаем корзину после оформления
+    # Очищаем корзину
     await db.clear_cart(user_id)
     
     try:
         await callback.message.edit_text(
-            f"✅ Заказ оформлен!\n\n"
-            f"💰 Сумма заказа: {total_sum} ₽\n"
-            f"📋 Статус: Ожидает оплаты\n\n"
+            f"✅ <b>Заказ оформлен!</b>\n\n"
+            f"💰 Сумма: {total_sum} ₽\n"
+            f"📋 Статус: В обработке\n\n"
             f"С вами свяжется администратор для уточнения деталей."
         )
     except Exception:

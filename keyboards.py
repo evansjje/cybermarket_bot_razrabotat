@@ -1,8 +1,9 @@
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
+from database import Database
 
-# Главное меню
-def main_menu_kb(is_admin: bool = False) -> ReplyKeyboardMarkup:
+
+def main_menu(is_admin: bool = False) -> ReplyKeyboardMarkup:
     builder = ReplyKeyboardBuilder()
     builder.row(KeyboardButton(text='🛍 Каталог'), KeyboardButton(text='🛒 Корзина'))
     builder.row(KeyboardButton(text='👥 Рефералка'), KeyboardButton(text='⭐ Отзывы'))
@@ -11,11 +12,7 @@ def main_menu_kb(is_admin: bool = False) -> ReplyKeyboardMarkup:
         builder.row(KeyboardButton(text='⚡ Админ-панель'))
     return builder.as_markup(resize_keyboard=True)
 
-# Алиас для main_menu
-def main_menu(is_admin: bool = False) -> ReplyKeyboardMarkup:
-    return main_menu_kb(is_admin)
 
-# Меню админки
 def admin_menu() -> ReplyKeyboardMarkup:
     builder = ReplyKeyboardBuilder()
     builder.row(KeyboardButton(text='📊 Статистика'), KeyboardButton(text='➕ Категория'))
@@ -23,51 +20,69 @@ def admin_menu() -> ReplyKeyboardMarkup:
     builder.row(KeyboardButton(text='⬅️ Назад'))
     return builder.as_markup(resize_keyboard=True)
 
-# Инлайн-кнопки карточки товара
-def product_card_buttons(product_id: int, category_id: int) -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text='➕ В корзину', callback_data=f'add_to_cart:{product_id}'))
-    builder.row(InlineKeyboardButton(text='⬅️ Назад', callback_data=f'category:{category_id}'))
-    return builder.as_markup()
 
-# Инлайн-кнопки списка товаров для удаления
-def delete_product_buttons(products: list) -> InlineKeyboardMarkup:
+async def categories_keyboard(db: Database) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    for product in products:
+    categories = await db.get_categories()
+    for cat in categories:
         builder.row(InlineKeyboardButton(
-            text=f'❌ {product["name"]}',
-            callback_data=f'delete_product:{product["id"]}'
-        ))
-    builder.row(InlineKeyboardButton(text='⬅️ Назад', callback_data='admin_products_back'))
-    return builder.as_markup()
-
-# Инлайн-кнопки категорий
-def categories_buttons(categories: list) -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    for category in categories:
-        builder.row(InlineKeyboardButton(
-            text=f'📂 {category["name"]}',
-            callback_data=f'category:{category["id"]}'
+            text=cat['name'],
+            callback_data=f'cat_{cat["id"]}'
         ))
     return builder.as_markup()
 
-# Инлайн-кнопки товаров в категории
-def products_buttons(products: list, category_id: int) -> InlineKeyboardMarkup:
+
+async def products_keyboard(category_id: int, db: Database) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    for product in products:
+    products = await db.get_products(category_id)
+    for prod in products:
         builder.row(InlineKeyboardButton(
-            text=f'🛍 {product["name"]} — {product["price"]}₽',
-            callback_data=f'product:{product["id"]}'
+            text=prod['name'],
+            callback_data=f'prod_{prod["id"]}'
         ))
-    builder.row(InlineKeyboardButton(text='⬅️ Назад', callback_data='catalog'))
+    builder.row(InlineKeyboardButton(
+        text='⬅️ Назад',
+        callback_data='back_to_categories'
+    ))
     return builder.as_markup()
 
-# Кнопки корзины
-def cart_buttons() -> InlineKeyboardMarkup:
+
+def product_card(product_id: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(
+        text='➕ В корзину',
+        callback_data=f'add_{product_id}'
+    ))
+    builder.row(InlineKeyboardButton(
+        text='⬅️ Назад',
+        callback_data='back_to_products'
+    ))
+    return builder.as_markup()
+
+
+async def delete_products_keyboard(db: Database) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    products = await db.get_products()
+    for prod in products:
+        builder.row(InlineKeyboardButton(
+            text=f'❌ {prod["name"]}',
+            callback_data=f'del_{prod["id"]}'
+        ))
+    builder.row(InlineKeyboardButton(
+        text='⬅️ Назад',
+        callback_data='back_to_admin'
+    ))
+    return builder.as_markup()
+
+
+def cart_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(
         InlineKeyboardButton(text='🗑 Очистить', callback_data='clear_cart'),
         InlineKeyboardButton(text='✅ Оформить', callback_data='checkout')
     )
-    builder.row(InlineKeyboardButton(text='⬅️ Назад', callback_data='catalog'))
+    builder.row(InlineKeyboardButton(
+        text='⬅️ Назад',
+        callback_data='back_to_menu'
+    ))
     return builder.as_markup()

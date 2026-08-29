@@ -1,90 +1,71 @@
 from aiogram import Router, F
 from aiogram.types import CallbackQuery, Message
-from aiogram.fsm.context import FSMContext
-
 from database import Database
-from keyboards import product_card_buttons
+from keyboards import categories_keyboard, products_keyboard, product_card_keyboard
 
 router = Router()
 db = Database()
 
 
 @router.message(F.text == '🛍 Каталог')
-async def show_categories(message: Message, state: FSMContext):
-    await state.clear()
-    categories = await db.get_categories()
-    
-    if not categories:
-        await message.answer("📭 Каталог пуст. Товары появятся позже.")
-        return
-    
-    text = "🛍 Выберите категорию:\n\n"
-    for cat in categories:
-        text += f"📁 {cat['name']}\n"
-    
-    await message.answer(text)
+async def show_categories(message: Message):
+    """Показать все категории товаров"""
+    kb = await categories_keyboard(db)
+    await message.answer("🛍 Выберите категорию:", reply_markup=kb)
 
 
-@router.callback_query(F.data.startswith('category:'))
-async def show_products(callback: CallbackQuery):
+@router.callback_query(F.data == 'back_to_categories')
+async def back_to_categories(callback: CallbackQuery):
+    """Вернуться к списку категорий"""
     await callback.answer()
-    
-    category_id = int(callback.data.split(':')[1])
-    products = await db.get_products(category_id)
-    
-    if not products:
-        try:
-            await callback.message.edit_text("📭 В этой категории пока нет товаров.")
-        except Exception:
-            pass
-        return
-    
-    text = "📦 Товары в категории:\n\n"
-    for product in products:
-        text += f"🆔 {product['id']}. {product['name']}\n"
-        text += f"📝 {product['description']}\n"
-        text += f"💰 Цена: {product['price']} ₽\n\n"
-    
     try:
-        await callback.message.edit_text(text)
+        kb = await categories_keyboard(db)
+        await callback.message.edit_text("🛍 Выберите категорию:", reply_markup=kb)
     except Exception:
         pass
 
 
-@router.callback_query(F.data.startswith('product:'))
-async def show_product_card(callback: CallbackQuery):
+@router.callback_query(F.data.startswith('cat_'))
+async def show_products(callback: CallbackQuery):
+    """Показать товары выбранной категории"""
     await callback.answer()
-    
-    product_id = int(callback.data.split(':')[1])
+    category_id = int(callback.data.split('_')[1])
+    try:
+        kb = await products_keyboard(category_id, db)
+        await callback.message.edit_text("📦 Выберите товар:", reply_markup=kb)
+    except Exception:
+        pass
+
+
+@router.callback_query(F.data.startswith('prod_'))
+async def show_product_card(callback: CallbackQuery):
+    """Показать карточку товара"""
+    await callback.answer()
+    product_id = int(callback.data.split('_')[1])
     product = await db.get_product_by_id(product_id)
     
     if not product:
-        try:
-            await callback.message.edit_text("❌ Товар не найден.")
-        except Exception:
-            pass
+        await callback.answer("❌ Товар не найден!", show_alert=True)
         return
     
-    text = f"🆔 {product['name']}\n\n"
-    text += f"📝 {product['description']}\n\n"
-    text += f"💰 Цена: {product['price']} ₽"
-    
     try:
-        await callback.message.edit_text(
-            text,
-            reply_markup=product_card_buttons(product['id'], product['category_id'])
+        kb = await product_card_keyboard(product_id)
+        text = (
+            f"📦 <b>{product['name']}</b>\n\n"
+            f"📝 {product['description']}\n\n"
+            f"💰 Цена: <b>{product['price']} ₽</b>"
         )
+        await callback.message.edit_text(text, reply_markup=kb, parse_mode='HTML')
     except Exception:
         pass
 
 
-@router.callback_query(F.data.startswith('add_to_cart:'))
+@router.callback_query(F.data.startswith('add_to_cart_'))
 async def add_to_cart(callback: CallbackQuery):
+    """Добавить товар в корзину"""
     await callback.answer()
-    
-    product_id = int(callback.data.split(':')[1])
+    product_id = int(callback.data.split('_')[3])
     user_id = callback.from_user.id
     
     await db.add_to_cart(user_id, product_id)
-    
     await callback.answer('✅ Товар добавлен в корзину!', show_alert=False)
