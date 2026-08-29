@@ -2,7 +2,7 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMar
 from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
 
 # Главное меню
-def main_menu(is_admin: bool = False) -> ReplyKeyboardMarkup:
+def main_menu_kb(is_admin: bool = False) -> ReplyKeyboardMarkup:
     builder = ReplyKeyboardBuilder()
     builder.row(KeyboardButton(text='🛍 Каталог'), KeyboardButton(text='🛒 Корзина'))
     builder.row(KeyboardButton(text='👥 Рефералка'), KeyboardButton(text='⭐ Отзывы'))
@@ -10,6 +10,10 @@ def main_menu(is_admin: bool = False) -> ReplyKeyboardMarkup:
     if is_admin:
         builder.row(KeyboardButton(text='⚡ Админ-панель'))
     return builder.as_markup(resize_keyboard=True)
+
+# Алиас для main_menu
+def main_menu(is_admin: bool = False) -> ReplyKeyboardMarkup:
+    return main_menu_kb(is_admin)
 
 # Меню админки
 def admin_menu() -> ReplyKeyboardMarkup:
