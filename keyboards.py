@@ -102,3 +102,18 @@ def back_to_menu_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text="⬅️ Назад", callback_data="back_to_menu")
     return builder.as_markup()
+
+
+def product_admin_keyboard(product_id: int) -> InlineKeyboardMarkup:
+    """Инлайн-клавиатура для управления товаром в админке"""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✏️ Изменить", callback_data=f"edit_product:{product_id}")
+    builder.button(text="🗑 Удалить", callback_data=f"delete_product:{product_id}")
+    builder.button(text="⬅️ Назад", callback_data="back_to_admin_products")
+    builder.adjust(2, 1)
+    return builder.as_markup()
+
+
+def main_menu_kb(is_admin: bool = False) -> ReplyKeyboardMarkup:
+    """Алиас для главного меню (совместимость)"""
+    return main_menu(is_admin=is_admin)
