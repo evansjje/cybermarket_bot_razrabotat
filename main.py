@@ -1,10 +1,7 @@
-# main.py
 import asyncio
 import logging
-
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
-
 from config import settings
 from database import Database
 
@@ -34,20 +31,17 @@ async def main():
     dp.include_router(admin.router)
     dp.include_router(other.router)
 
-    # Передаем db в хендлеры через middleware или глобально
-    dp.workflow_data['db'] = db
+    # Передаем db в диспетчер через middleware
+    dp["db"] = db
 
-    # Запуск поллинга
+    # Запускаем бота
     logger.info("Бот запущен!")
     try:
         await dp.start_polling(bot)
     finally:
-        await db.conn.close()
+        await db.close()
         await bot.session.close()
 
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except (KeyboardInterrupt, SystemExit):
-        logger.info("Бот остановлен")
+    asyncio.run(main())

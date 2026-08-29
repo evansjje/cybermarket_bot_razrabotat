@@ -1,130 +1,95 @@
-# handlers/catalog.py
 from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import CallbackQuery, Message
 from aiogram.fsm.context import FSMContext
-
 from database import Database
 from keyboards import categories_keyboard, products_keyboard, product_card_keyboard, main_menu
-from config import settings
 
 router = Router()
 
 
-@router.message(F.text == '🛍 Каталог')
-async def show_categories(message: Message, db: Database):
+@router.callback_query(F.data == 'catalog')
+async def show_categories(callback: CallbackQuery, db: Database):
     """Показать категории товаров"""
-    categories = await db.get_categories()
-    await message.answer(
-        "🛍 Выберите категорию:",
-        reply_markup=categories_keyboard(categories)
-    )
+    await callback.answer()
+    try:
+        keyboard = await categories_keyboard(db)
+        await callback.message.edit_text(
+            "🛍 Выберите категорию:",
+            reply_markup=keyboard
+        )
+    except Exception:
+        pass
 
 
 @router.callback_query(F.data.startswith('cat_'))
-async def show_category_products(callback: CallbackQuery, db: Database):
+async def show_products(callback: CallbackQuery, db: Database):
     """Показать товары выбранной категории"""
     await callback.answer()
-    
     category_id = int(callback.data.split('_')[1])
-    products = await db.get_products(category_id=category_id)
-    
-    if not products:
+    try:
+        keyboard = await products_keyboard(category_id, db)
         await callback.message.edit_text(
-            "😔 В этой категории пока нет товаров.",
-            reply_markup=products_keyboard(products)
+            "📦 Выберите товар:",
+            reply_markup=keyboard
         )
-        return
-    
-    await callback.message.edit_text(
-        "📦 Товары в категории:",
-        reply_markup=products_keyboard(products)
-    )
+    except Exception:
+        pass
 
 
 @router.callback_query(F.data.startswith('prod_'))
 async def show_product_card(callback: CallbackQuery, db: Database):
     """Показать карточку товара"""
     await callback.answer()
-    
     product_id = int(callback.data.split('_')[1])
-    product = await db.get_product_by_id(product_id)
-    
+    product = await db.get_product(product_id)
     if not product:
-        await callback.message.edit_text(
-            "❌ Товар не найден.",
-            reply_markup=products_keyboard(await db.get_products())
-        )
+        await callback.answer("❌ Товар не найден!", show_alert=True)
         return
-    
-    text = (
-        f"📦 <b>{product.get('title', 'Без названия')}</b>\n\n"
-        f"📝 {product.get('desc', 'Описание отсутствует')}\n\n"
-        f"💰 Цена: {product.get('price', 0)}₽"
-    )
-    
-    await callback.message.edit_text(
-        text,
-        reply_markup=product_card_keyboard(product_id),
-        parse_mode='HTML'
-    )
+
+    try:
+        keyboard = await product_card_keyboard(product_id)
+        await callback.message.edit_text(
+            f"📦 <b>{product['name']}</b>\n\n"
+            f"📝 {product['description']}\n\n"
+            f"💰 Цена: {product['price']} ₽",
+            reply_markup=keyboard,
+            parse_mode='HTML'
+        )
+    except Exception:
+        pass
 
 
-@router.callback_query(F.data == 'add_to_cart')
-async def add_to_cart(callback: CallbackQuery, db: Database, state: FSMContext):
+@router.callback_query(F.data.startswith('add_to_cart_'))
+async def add_to_cart(callback: CallbackQuery, db: Database):
     """Добавить товар в корзину"""
     await callback.answer()
-    
-    # Получаем product_id из состояния или из callback_data
-    data = await state.get_data()
-    product_id = data.get('current_product_id')
-    
-    if not product_id:
-        # Если нет в состоянии, пробуем извлечь из callback_data
-        callback_data = callback.data
-        if '_' in callback_data:
-            parts = callback_data.split('_')
-            if len(parts) > 1 and parts[1].isdigit():
-                product_id = int(parts[1])
-    
-    if not product_id:
-        await callback.answer("❌ Ошибка добавления", show_alert=True)
-        return
-    
+    product_id = int(callback.data.split('_')[3])
     user_id = callback.from_user.id
+
     await db.add_to_cart(user_id, product_id)
-    
-    await callback.answer("✅ Добавлено в корзину!", show_alert=False)
+    await callback.answer('✅ Товар добавлен в корзину!', show_alert=False)
 
 
 @router.callback_query(F.data == 'back_to_categories')
 async def back_to_categories(callback: CallbackQuery, db: Database):
-    """Вернуться к списку категорий"""
+    """Вернуться к категориям"""
     await callback.answer()
-    
-    categories = await db.get_categories()
-    await callback.message.edit_text(
-        "🛍 Выберите категорию:",
-        reply_markup=categories_keyboard(categories)
-    )
-
-
-@router.callback_query(F.data == 'back_to_products')
-async def back_to_products(callback: CallbackQuery, db: Database, state: FSMContext):
-    """Вернуться к списку товаров"""
-    await callback.answer()
-    
-    data = await state.get_data()
-    category_id = data.get('current_category_id')
-    
-    if category_id:
-        products = await db.get_products(category_id=category_id)
-        await callback.message.edit_text(
-            "📦 Товары в категории:",
-            reply_markup=products_keyboard(products)
-        )
-    else:
-        categories = await db.get_categories()
+    try:
+        keyboard = await categories_keyboard(db)
         await callback.message.edit_text(
             "🛍 Выберите категорию:",
-            reply_markup=categories_keyboard(categories)
+            reply_markup=keyboard
         )
+    except Exception:
+        pass
+
+
+@router.message(F.text == '🛍 Каталог')
+async def catalog_button(message: Message, db: Database, state: FSMContext):
+    """Обработка нажатия кнопки Каталог"""
+    await state.clear()
+    keyboard = await categories_keyboard(db)
+    await message.answer(
+        "🛍 Выберите категорию:",
+        reply_markup=keyboard
+    )
