@@ -4,6 +4,11 @@ from typing import List, Dict, Any
 from database import Database
 
 
+def main_menu_kb(is_admin: bool = False) -> ReplyKeyboardMarkup:
+    """Главное меню (алиас для main_menu)"""
+    return main_menu(is_admin)
+
+
 def main_menu(is_admin: bool = False) -> ReplyKeyboardMarkup:
     """Главное меню"""
     builder = ReplyKeyboardBuilder()
