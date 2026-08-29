@@ -1,20 +1,21 @@
-# config.py
-from typing import List
-from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import field_validator
+from typing import List, Union
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file='.env', extra='ignore')
+
     BOT_TOKEN: str
     ADMIN_IDS: List[int] = []
 
-    model_config = SettingsConfigDict(env_file='.env', extra='ignore')
-
     @field_validator('ADMIN_IDS', mode='before')
     @classmethod
-    def parse_admin_ids(cls, v):
+    def parse_admin_ids(cls, v: Union[str, List[int], None]) -> List[int]:
+        if v is None or v == '':
+            return []
         if isinstance(v, str):
-            return [int(x.strip()) for x in v.split(',') if x.strip()]
+            return [int(x.strip()) for x in v.split(',') if x.strip().isdigit()]
         return v
 
 

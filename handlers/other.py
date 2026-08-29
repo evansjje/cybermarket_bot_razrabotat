@@ -1,109 +1,66 @@
-# handlers/other.py
 from aiogram import Router, F
-from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
-from config import settings
-from database import db
+from aiogram.types import Message, CallbackQuery
+from aiogram.fsm.context import FSMContext
+
+from database import Database
 from keyboards import main_menu
 
 router = Router()
+db = Database()
 
 
 @router.message(F.text == '👥 Рефералка')
-async def referral(message: Message) -> None:
-    """Обработчик кнопки Рефералка"""
-    user_id = message.from_user.id
-    is_admin = user_id in settings.ADMIN_IDS
+async def referral_system(message: Message, state: FSMContext):
+    await state.clear()
     
-    # Создаем реферальную ссылку
+    user_id = message.from_user.id
+    username = message.from_user.username or f"user_{user_id}"
+    
+    # Ссылка на бота с реферальным кодом
     bot_username = (await message.bot.me()).username
-    referral_link = f"https://t.me/{bot_username}?start=ref_{user_id}"
+    referral_link = f"https://t.me/{bot_username}?start={user_id}"
+    
+    # Получаем количество рефералов
+    referrals_count = await db.get_referrals_count(user_id)
     
     text = (
-        f"👥 <b>Реферальная программа</b>\n\n"
-        f"Приглашайте друзей и получайте бонусы!\n\n"
+        f"👥 Реферальная система\n\n"
         f"🔗 Ваша реферальная ссылка:\n"
-        f"<code>{referral_link}</code>\n\n"
-        f"📊 Статистика:\n"
-        f"• Приглашено друзей: 0\n"
-        f"• Заработано: 0₽\n\n"
-        f"Поделитесь ссылкой с друзьями и получайте "
-        f"10% от их покупок!"
+        f"{referral_link}\n\n"
+        f"📊 Приглашено пользователей: {referrals_count}\n\n"
+        f"💡 Отправьте эту ссылку друзьям, и когда они перейдут по ней, "
+        f"они станут вашими рефералами!"
     )
     
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text='🔗 Поделиться', url=f"https://t.me/share/url?url={referral_link}")],
-        [InlineKeyboardButton(text='⬅️ В меню', callback_data='back_to_menu')]
-    ])
-    
-    await message.answer(text, reply_markup=keyboard)
+    await message.answer(text)
 
 
 @router.message(F.text == '⭐ Отзывы')
-async def reviews(message: Message) -> None:
-    """Обработчик кнопки Отзывы"""
-    user_id = message.from_user.id
-    is_admin = user_id in settings.ADMIN_IDS
+async def reviews(message: Message, state: FSMContext):
+    await state.clear()
     
     text = (
-        f"⭐ <b>Отзывы наших клиентов</b>\n\n"
-        f"🌟 <b>Алексей</b>: \"Отличный магазин! Всё работает, "
-        f"рекомендую!\"\n\n"
-        f"🌟 <b>Мария</b>: \"Быстрая доставка, качественный товар. "
-        f"Спасибо!\"\n\n"
-        f"🌟 <b>Дмитрий</b>: \"Лучший магазин цифровых товаров! "
-        f"Всё чётко и быстро.\"\n\n"
-        f"🌟 <b>Елена</b>: \"Пользуюсь уже месяц, всё отлично! "
-        f"Поддержка всегда на связи.\"\n\n"
-        f"💬 Хотите оставить отзыв? Напишите нам в поддержку!"
+        "⭐ Отзывы о нашем магазине\n\n"
+        "🌟 Мы гордимся качеством наших товаров и сервиса!\n\n"
+        "📝 Хотите оставить отзыв? Напишите нам в поддержку:\n"
+        "@CyberMarket_Support\n\n"
+        "💬 Ваше мнение очень важно для нас!"
     )
     
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text='⬅️ В меню', callback_data='back_to_menu')]
-    ])
-    
-    await message.answer(text, reply_markup=keyboard)
+    await message.answer(text)
 
 
 @router.message(F.text == '🆘 Поддержка')
-async def support(message: Message) -> None:
-    """Обработчик кнопки Поддержка"""
-    user_id = message.from_user.id
-    is_admin = user_id in settings.ADMIN_IDS
+async def support(message: Message, state: FSMContext):
+    await state.clear()
     
     text = (
-        f"🆘 <b>Служба поддержки</b>\n\n"
-        f"Мы всегда готовы помочь вам!\n\n"
-        f"📧 <b>Email:</b> support@cybermarket.ru\n"
-        f"💬 <b>Telegram:</b> @cybermarket_support\n"
-        f"🕐 <b>Время работы:</b> 24/7\n\n"
-        f"Опишите вашу проблему, и мы ответим "
-        f"в течение 15 минут!"
+        "🆘 Поддержка CyberMarket\n\n"
+        "📧 Свяжитесь с нами:\n"
+        "📩 Email: support@cybermarket.com\n"
+        "💬 Telegram: @CyberMarket_Support\n\n"
+        "🕐 Время работы: 24/7\n\n"
+        "⚡️ Мы ответим на все ваши вопросы в ближайшее время!"
     )
     
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text='📧 Написать в поддержку', url='https://t.me/cybermarket_support')],
-        [InlineKeyboardButton(text='⬅️ В меню', callback_data='back_to_menu')]
-    ])
-    
-    await message.answer(text, reply_markup=keyboard)
-
-
-@router.callback_query(F.data == 'back_to_menu')
-async def back_to_menu(callback) -> None:
-    """Возврат в главное меню"""
-    await callback.answer()
-    user_id = callback.from_user.id
-    is_admin = user_id in settings.ADMIN_IDS
-    
-    try:
-        await callback.message.edit_text(
-            'Главное меню:',
-            reply_markup=None
-        )
-    except Exception:
-        pass
-    
-    await callback.message.answer(
-        'Выберите раздел:',
-        reply_markup=main_menu(is_admin=is_admin)
-    )
+    await message.answer(text)
