@@ -3,7 +3,7 @@ from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
 from typing import List, Dict, Any
 
 
-def main_menu(is_admin: bool = False) -> ReplyKeyboardMarkup:
+def main_menu_kb(is_admin: bool = False) -> ReplyKeyboardMarkup:
     """Главное меню"""
     builder = ReplyKeyboardBuilder()
     builder.row(KeyboardButton(text='🛍 Каталог'), KeyboardButton(text='🛒 Корзина'))
@@ -12,6 +12,11 @@ def main_menu(is_admin: bool = False) -> ReplyKeyboardMarkup:
     if is_admin:
         builder.row(KeyboardButton(text='⚡ Админ-панель'))
     return builder.as_markup(resize_keyboard=True)
+
+
+def main_menu(is_admin: bool = False) -> ReplyKeyboardMarkup:
+    """Главное меню"""
+    return main_menu_kb(is_admin)
 
 
 def admin_menu() -> ReplyKeyboardMarkup:
