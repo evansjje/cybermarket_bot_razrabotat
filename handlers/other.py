@@ -54,3 +54,30 @@ async def support_handler(message: Message):
     )
     
     await message.answer(text)
+
+
+async def reviews(callback: CallbackQuery):
+    """Обработчик отзывов для callback-запросов"""
+    await callback.answer("⭐ Отзывы о CyberMarket", show_alert=True)
+    text = (
+        f"⭐ <b>Отзывы о CyberMarket</b>\n\n"
+        f"💬 Наши клиенты высоко оценивают качество товаров и скорость доставки!\n\n"
+        f"📝 Хотите оставить отзыв? Напишите нам в поддержку:\n"
+        f"🆘 <b>Поддержка</b> - в главном меню\n\n"
+        f"🌟 Средняя оценка: 4.9/5\n"
+        f"👥 Более 1000 довольных клиентов"
+    )
+    await callback.message.answer(text)
+
+
+async def support(callback: CallbackQuery):
+    """Обработчик поддержки для callback-запросов"""
+    await callback.answer("🆘 Поддержка CyberMarket", show_alert=True)
+    text = (
+        f"🆘 <b>Поддержка CyberMarket</b>\n\n"
+        f"📧 Email: support@cybermarket.com\n"
+        f"💬 Telegram: @cybermarket_support\n"
+        f"🕐 Время работы: 24/7\n\n"
+        f"Опишите вашу проблему, и мы поможем в ближайшее время!"
+    )
+    await callback.message.answer(text)

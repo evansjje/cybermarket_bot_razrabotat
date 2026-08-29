@@ -3,6 +3,29 @@ from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
 from database import Database
 
 
+def main_menu_kb(is_admin: bool = False) -> ReplyKeyboardMarkup:
+    builder = ReplyKeyboardBuilder()
+    builder.row(KeyboardButton(text='🛍 Каталог'), KeyboardButton(text='🛒 Корзина'))
+    builder.row(KeyboardButton(text='👥 Рефералка'), KeyboardButton(text='⭐ Отзывы'))
+    builder.row(KeyboardButton(text='🆘 Поддержка'))
+    if is_admin:
+        builder.row(KeyboardButton(text='⚡ Админ-панель'))
+    return builder.as_markup(resize_keyboard=True)
+
+
+def product_card_keyboard(product_id: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(
+        text='➕ В корзину',
+        callback_data=f'add_{product_id}'
+    ))
+    builder.row(InlineKeyboardButton(
+        text='⬅️ Назад',
+        callback_data='back_to_products'
+    ))
+    return builder.as_markup()
+
+
 def main_menu(is_admin: bool = False) -> ReplyKeyboardMarkup:
     builder = ReplyKeyboardBuilder()
     builder.row(KeyboardButton(text='🛍 Каталог'), KeyboardButton(text='🛒 Корзина'))
