@@ -4,6 +4,11 @@ from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
 from typing import List, Dict, Any
 
 
+def main_menu_kb(is_admin: bool = False) -> ReplyKeyboardMarkup:
+    """Главное меню (алиас для get_main_menu)"""
+    return get_main_menu(is_admin)
+
+
 def get_main_menu(is_admin: bool = False) -> ReplyKeyboardMarkup:
     """Главное меню"""
     builder = ReplyKeyboardBuilder()
