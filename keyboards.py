@@ -1,106 +1,86 @@
 # keyboards.py
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
 from typing import List, Dict, Any
+from config import settings
 
 
-def main_menu_kb(is_admin: bool = False) -> ReplyKeyboardMarkup:
-    """Главное меню (алиас для get_main_menu)"""
-    return get_main_menu(is_admin)
-
-
-def get_main_menu(is_admin: bool = False) -> ReplyKeyboardMarkup:
+def main_menu(is_admin: bool = False) -> ReplyKeyboardMarkup:
     """Главное меню"""
-    builder = ReplyKeyboardBuilder()
-    builder.row(KeyboardButton(text='🛍 Каталог'), KeyboardButton(text='🛒 Корзина'))
-    builder.row(KeyboardButton(text='👥 Рефералка'), KeyboardButton(text='⭐ Отзывы'))
-    builder.row(KeyboardButton(text='🆘 Поддержка'))
+    buttons = [
+        [KeyboardButton(text='🛍 Каталог')],
+        [KeyboardButton(text='🛒 Корзина')],
+        [KeyboardButton(text='👥 Рефералка'), KeyboardButton(text='⭐ Отзывы')],
+        [KeyboardButton(text='🆘 Поддержка')],
+    ]
     if is_admin:
-        builder.row(KeyboardButton(text='⚡ Админ-панель'))
-    return builder.as_markup(resize_keyboard=True)
+        buttons.append([KeyboardButton(text='⚡ Админ-панель')])
+    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
 
-def get_admin_menu() -> ReplyKeyboardMarkup:
+def admin_menu() -> ReplyKeyboardMarkup:
     """Меню админ-панели"""
-    builder = ReplyKeyboardBuilder()
-    builder.row(KeyboardButton(text='📊 Статистика'), KeyboardButton(text='➕ Категория'))
-    builder.row(KeyboardButton(text='➕ Товар'), KeyboardButton(text='📦 Товары'))
-    builder.row(KeyboardButton(text='⬅️ Назад'))
-    return builder.as_markup(resize_keyboard=True)
+    buttons = [
+        [KeyboardButton(text='📊 Статистика')],
+        [KeyboardButton(text='➕ Категория'), KeyboardButton(text='➕ Товар')],
+        [KeyboardButton(text='📦 Товары')],
+        [KeyboardButton(text='⬅️ Назад')],
+    ]
+    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
 
 
-def get_categories_keyboard(categories: List[Dict[str, Any]]) -> InlineKeyboardMarkup:
-    """Клавиатура категорий для каталога"""
-    builder = InlineKeyboardBuilder()
-    for cat in categories:
-        builder.row(InlineKeyboardButton(
-            text=cat.get('title', 'Категория'),
-            callback_data=f"cat_{cat.get('id')}"
-        ))
-    builder.row(InlineKeyboardButton(text='⬅️ Назад', callback_data='back_to_menu'))
-    return builder.as_markup()
-
-
-def get_products_keyboard(products: List[Dict[str, Any]]) -> InlineKeyboardMarkup:
-    """Клавиатура товаров в категории"""
-    builder = InlineKeyboardBuilder()
-    for prod in products:
-        builder.row(InlineKeyboardButton(
-            text=f"{prod.get('title', 'Товар')} — {prod.get('price', 0)}₽",
-            callback_data=f"prod_{prod.get('id')}"
-        ))
-    builder.row(InlineKeyboardButton(text='⬅️ Назад', callback_data='back_to_categories'))
-    return builder.as_markup()
-
-
-def get_product_card_keyboard(product_id: int) -> InlineKeyboardMarkup:
+def product_card(product_id: int) -> InlineKeyboardMarkup:
     """Инлайн-кнопки карточки товара"""
-    builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text='➕ В корзину', callback_data=f"add_{product_id}"))
-    builder.row(InlineKeyboardButton(text='⬅️ Назад', callback_data='back_to_products'))
-    return builder.as_markup()
+    buttons = [
+        [
+            InlineKeyboardButton(text='➕ В корзину', callback_data=f'add_to_cart:{product_id}'),
+            InlineKeyboardButton(text='⬅️ Назад', callback_data='back_to_catalog')
+        ]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
-def get_cart_keyboard() -> InlineKeyboardMarkup:
-    """Клавиатура корзины"""
-    builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text='🗑 Очистить корзину', callback_data='clear_cart'))
-    builder.row(InlineKeyboardButton(text='💳 Оплатить', callback_data='pay'))
-    builder.row(InlineKeyboardButton(text='⬅️ Назад', callback_data='back_to_menu'))
-    return builder.as_markup()
+def admin_product_actions(product_id: int) -> InlineKeyboardMarkup:
+    """Инлайн-кнопки админки для товара"""
+    buttons = [
+        [
+            InlineKeyboardButton(text='✏️ Цена', callback_data=f'edit_price:{product_id}'),
+            InlineKeyboardButton(text='📝 Описание', callback_data=f'edit_desc:{product_id}'),
+            InlineKeyboardButton(text='🗑 Удалить', callback_data=f'delete_product:{product_id}')
+        ]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
-def get_admin_products_keyboard(products: List[Dict[str, Any]]) -> InlineKeyboardMarkup:
-    """Клавиатура списка товаров для админа"""
-    builder = InlineKeyboardBuilder()
-    for prod in products:
-        builder.row(InlineKeyboardButton(
-            text=f"{prod.get('title', 'Товар')}",
-            callback_data=f"admin_prod_{prod.get('id')}"
-        ))
-    builder.row(InlineKeyboardButton(text='⬅️ Назад', callback_data='admin_back'))
-    return builder.as_markup()
+def cart_actions() -> InlineKeyboardMarkup:
+    """Кнопки корзины"""
+    buttons = [
+        [
+            InlineKeyboardButton(text='🗑 Очистить корзину', callback_data='clear_cart'),
+            InlineKeyboardButton(text='💳 Оплатить', callback_data='checkout')
+        ]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
-def get_admin_product_actions_keyboard(product_id: int) -> InlineKeyboardMarkup:
-    """Инлайн-кнопки действий с товаром для админа"""
-    builder = InlineKeyboardBuilder()
-    builder.row(
-        InlineKeyboardButton(text='✏️ Цена', callback_data=f"edit_price_{product_id}"),
-        InlineKeyboardButton(text='📝 Описание', callback_data=f"edit_desc_{product_id}")
-    )
-    builder.row(InlineKeyboardButton(text='🗑 Удалить', callback_data=f"delete_prod_{product_id}"))
-    builder.row(InlineKeyboardButton(text='⬅️ Назад', callback_data='admin_products'))
-    return builder.as_markup()
-
-
-def get_admin_categories_keyboard(categories: List[Dict[str, Any]]) -> InlineKeyboardMarkup:
-    """Клавиатура категорий для админа (при добавлении товара)"""
-    builder = InlineKeyboardBuilder()
+def categories_keyboard(categories: List[Dict[str, Any]]) -> InlineKeyboardMarkup:
+    """Клавиатура категорий"""
+    buttons = []
     for cat in categories:
-        builder.row(InlineKeyboardButton(
+        buttons.append([InlineKeyboardButton(
             text=cat.get('title', 'Категория'),
-            callback_data=f"admin_cat_{cat.get('id')}"
-        ))
-    builder.row(InlineKeyboardButton(text='⬅️ Назад', callback_data='admin_back'))
-    return builder.as_markup()
+            callback_data=f'category:{cat.get("id")}'
+        )])
+    buttons.append([InlineKeyboardButton(text='⬅️ Назад', callback_data='back_to_main')])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def products_keyboard(products: List[Dict[str, Any]]) -> InlineKeyboardMarkup:
+    """Клавиатура товаров в категории"""
+    buttons = []
+    for prod in products:
+        buttons.append([InlineKeyboardButton(
+            text=f"{prod.get('title', 'Товар')} — {prod.get('price', 0)}₽",
+            callback_data=f'product:{prod.get("id")}'
+        )])
+    buttons.append([InlineKeyboardButton(text='⬅️ Назад', callback_data='back_to_categories')])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
