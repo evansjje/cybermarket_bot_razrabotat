@@ -99,3 +99,6 @@ def back_to_main_keyboard() -> InlineKeyboardMarkup:
     """Кнопка возврата в главное меню."""
     buttons = [[InlineKeyboardButton(text='⬅️ Назад', callback_data='back_to_main')]]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+main_menu_kb = main_menu
