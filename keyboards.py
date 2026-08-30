@@ -84,3 +84,7 @@ def products_keyboard(products: List[Dict[str, Any]]) -> InlineKeyboardMarkup:
         )])
     buttons.append([InlineKeyboardButton(text='⬅️ Назад', callback_data='back_to_categories')])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+# Добавленный недостающий элемент
+main_menu_kb = main_menu()
