@@ -2,40 +2,34 @@
 import asyncio
 import logging
 from aiogram import Bot, Dispatcher
-from aiogram.client.default import DefaultBotProperties
-from aiogram.enums import ParseMode
-
+from aiogram.fsm.storage.memory import MemoryStorage
 from config import settings
 from database import Database
 from handlers import start, catalog, cart, admin, other
 
 logging.basicConfig(level=logging.INFO)
 
-
 async def main():
-    bot = Bot(
-        token=settings.BOT_TOKEN,
-        default=DefaultBotProperties(parse_mode=ParseMode.HTML)
-    )
-    dp = Dispatcher()
-
+    # Инициализация БД
     db = Database()
-    await db.connect()
+    await db.init_db()
 
-    dp.workflow_data['db'] = db
+    # Создание бота и диспетчера
+    bot = Bot(token=settings.BOT_TOKEN)
+    dp = Dispatcher(storage=MemoryStorage())
 
+    # Регистрация роутеров
     dp.include_router(start.router)
     dp.include_router(catalog.router)
     dp.include_router(cart.router)
     dp.include_router(admin.router)
     dp.include_router(other.router)
 
+    # Запуск поллинга
     try:
         await dp.start_polling(bot)
     finally:
-        await db.db.close()
         await bot.session.close()
-
 
 if __name__ == '__main__':
     asyncio.run(main())
